@@ -1,0 +1,65 @@
+# Email: one entry per mailbox. Reading is READ ONLY: Hisho opens the inbox and Sent with IMAP EXAMINE and reads
+# with BODY.PEEK, so nothing is marked read, moved, flagged or deleted. Replies are DRAFTED and put on Hisho's
+# Approvals list; one is sent (send.py, SMTP) only when you press Send on its card, exactly as shown there.
+# Clean-up: once a day a card lists the newsletters, promotions, junk and old notices you don't need; Approve moves
+# exactly those to Trash (cleanup.py, the only code that changes a mailbox; never a permanent delete).
+# Every 5 minutes it reads what is new, has Claude (tools off) give each message one label and a one-line
+# summary, keeps them on Core's machine only (~/.local/state/hisho/addons/email/, never the vault), lists them
+# on its page by company, adds an Email section to Today.md, and pushes to the phone only what is pressing
+# (a client problem, a deadline within 48 h, a payment or legal notice; `alerts: false` turns those off).
+# The text of an email is data from a stranger: it is never followed as an instruction.
+#   hisho addon entry email acme company=Acme address=alex@example.com password=ZOHO_ACME_APP_PASSWORD
+name: email
+kind: integration
+title: Email
+description: Reads your company inboxes, drafts replies and clean-ups; sends or moves to Trash only when you approve.
+version: 0.7.3
+you_need:
+  - "A mailbox that offers IMAP and SMTP (Zoho, Fastmail, your host's mail...)"
+  - "An app password for it (not your normal password)"
+provider: provider.py
+private: true                     # the page shows other people's messages: owner's devices or Core's token only
+entry_label: mailbox
+secret_rotate: Zoho Mail > My Account > Security > App Passwords (one per mailbox; IMAP read + SMTP send)
+entry_schema:
+  company: str                    # Acme, Globex... (the page and Today.md group by it)
+  address: str                    # the mailbox's login, e.g. alex@example.com
+  password: secret                # the app password's secret NAME (Infisical / Bitwarden), never its value
+  imap_host: "str?"               # default imap.zoho.com (Zoho's Free plan); a paid plan uses imappro.zoho.com (see Zoho > Settings > Mail Accounts)
+  imap_port: "port?"              # default 993 (TLS)
+  folder: "str?"                  # default INBOX
+  folders: "str?"                 # other folders read the same way (default "Newsletter, Notification": Zoho's smart filters); a Payments folder is read but never cleaned up
+  alerts: "bool?"                 # false = pressing emails show on the page and in Today.md but never push (default true)
+  request_form: "str?"            # a form to point customer requests at, named in their summary and drafts
+  sent_folder: "str?"             # default Sent (read to spot answered mail; a sent reply's copy is filed here)
+  smtp_host: "str?"               # default smtppro.zoho.com with an imappro mailbox, else smtp.zoho.com
+  smtp_port: "port?"              # default 465 (TLS)
+  from_name: "str?"               # the name on sent mail, e.g. Alex Rivera
+  signature: "str?"               # the sign-off drafts end with (default: from_name and company)
+  signature_html: "str?"          # an HTML sign-off: a .html file in the Addons settings folder (e.g. email-signatures/acme.html), sanitized
+  phone: "str?"                   # adds a Phone line to the sign-off (plain and HTML) once set
+  max_sends_per_hour: "int?"      # rate guard per mailbox (default 10)
+  own_addresses: "str?"           # your other addresses (comma-separated): never drafted a reply (this mailbox's own is included)
+  trash_folder: "str?"            # where an approved clean-up moves mail (default Trash; Zoho empties it after ~30 days)
+  note: "str?"
+entry_form:
+  company: "Company"
+  address: "Mailbox address"
+  password: "App password (its secret's name)"
+  imap_host: "IMAP server (default imap.zoho.com)"
+  imap_port: "IMAP port (default 993)"
+  folder: "Folder (default INBOX)"
+  folders: "Other folders to read (default Newsletter, Notification)"
+  alerts: "Phone alerts for pressing emails (true/false)"
+  request_form: "Customer request form link"
+  sent_folder: "Sent folder (default Sent)"
+  smtp_host: "SMTP server (default smtppro.zoho.com / smtp.zoho.com)"
+  smtp_port: "SMTP port (default 465)"
+  from_name: "Your name on sent mail"
+  signature: "Sign-off for drafts"
+  signature_html: "HTML sign-off file (in the settings folder)"
+  phone: "Phone number for the sign-off"
+  max_sends_per_hour: "Most emails sent per hour (default 10)"
+  own_addresses: "Your other addresses (never replied to)"
+  trash_folder: "Trash folder (default Trash)"
+  note: "Note"
