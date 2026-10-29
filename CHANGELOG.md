@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.2
+
+- Proton Mail: Bridge keeps its sign-in in pass (it prefers pass; a fresh desktop keyring had no unlocked collection and Bridge couldn't use it, found by the image test). With no pass store yet, Hisho makes one for Bridge with its own key; an existing store is used as it is. Keychain checks match Bridge's own error words only.
+
 ## 0.9.1
 
 - Proton Mail: a missing system library (Bridge needs libfido2, libsecret, GLib) is named with the command that adds it; a Souko from the image has them.

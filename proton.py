@@ -4,8 +4,7 @@ that serves IMAP and SMTP on 127.0.0.1 of the machine it runs on. Set up this ma
 1. Installs Bridge (Proton's official package, checksum pinned in addon.yaml, unpacked into Hisho's own folder: no
    root needed) on the machine the email add-on runs on (Core).
 2. Signs in once through Bridge's own command line with the Proton address, password and 2FA code typed on the page
-   (used once, never kept; Bridge keeps its session in this machine's keychain: the desktop's login keyring, or
-   ``pass`` on a server).
+   (used once, never kept; Bridge keeps its session in ``pass``, set up for it if there is no store yet).
 3. Switches Bridge to SSL for IMAP and SMTP and reads its settings (``info``): the local address, ports and the Bridge
    password, which the mailbox entry gets (the Bridge password as a local secret).
 4. Starts Bridge in the background (user unit hisho-proton-bridge.service, ``bridge --noninteractive``).
@@ -163,7 +162,8 @@ class Pty:
             pass
 
 
-KEYCHAIN = r"(?i)no (supported )?(keychain|password manager)|secret.?service|could not .*keychain|pass.*not initiali[sz]ed"
+# Bridge's own words when it has no keychain (pkg/keychain/keychain.go)
+KEYCHAIN = r"(?i)\bno keychain\b|preferred keychain is not available|Keychain helper couldn't be created"
 
 
 def parse_info(text: str) -> dict[str, Any]:
@@ -195,13 +195,13 @@ def sign_in(exe: Path | str, address: str, password: str, code: str = "", mailbo
         if i == 2:
             raise BridgeError(_library_words(re.search(r"shared libraries: (\S+?):", out).group(1)))
         if i != 0:
-            raise BridgeError(_keychain_words() if i == 1 else f"Bridge didn't start: {out.strip()[-200:]}")
+            raise BridgeError((_keychain_words() if i == 1 else "Bridge didn't start.") + _tail(cli.seen))
         if re.search(KEYCHAIN, out):                     # it may say so right under its welcome line
-            raise BridgeError(_keychain_words())
+            raise BridgeError(_keychain_words() + _tail(cli.seen))
         cli.send("login")
         i, out = cli.expect([r"Username", KEYCHAIN], 30)
         if i == 1 or re.search(KEYCHAIN, cli.seen):
-            raise BridgeError(_keychain_words())
+            raise BridgeError(_keychain_words() + _tail(cli.seen))
         if i != 0:
             raise BridgeError("Bridge didn't ask for the Proton address")
         cli.send(address)
@@ -226,7 +226,7 @@ def sign_in(exe: Path | str, address: str, password: str, code: str = "", mailbo
                 raise BridgeError("Proton refused the sign-in: " + ((why.group(1).strip() if why else "") or "check "
                                   "the address, password and 2FA code"))
             elif i == 4:
-                raise BridgeError(_keychain_words())
+                raise BridgeError(_keychain_words() + _tail(cli.seen))
             else:
                 raise BridgeError("Bridge didn't answer the sign-in in time")
         settings = _info(cli)
@@ -263,10 +263,45 @@ def _library_words(lib: str) -> str:
             f"Mail again. A Souko from the image has it already.")
 
 
+def _tail(seen: str) -> str:
+    """Bridge's last lines, for whoever has to look further (it never echoes the password or code typed)."""
+    lines = [ln.strip() for ln in seen.splitlines() if ln.strip()][-4:]
+    return (" Bridge said: " + " / ".join(lines))[:600] if lines else ""
+
+
 def _keychain_words() -> str:
-    return ("Proton Bridge needs a keychain to keep its sign-in on this machine: on a desktop, the login keyring "
-            "(already there on a Souko); on a server, `pass` (install it, then `gpg --quick-gen-key` and `pass init` "
-            "with that key) and try again.")
+    return ("Proton Bridge couldn't use its keychain (pass) on this machine. Check that `pass` works for this user "
+            "(pass ls), then press Set up Proton Mail again.")
+
+
+# ── its keychain: pass ────────────────────────────────────────────────────
+# Bridge prefers ``pass`` whenever it is installed and usable (pkg/keychain/helper_linux.go). A desktop's login
+# keyring often has no unlocked default collection (it would pop up a password dialog nobody answers: the image test,
+# 2026-10-29), so Hisho gives Bridge a pass store of its own when there is none: a GPG key without a passphrase,
+# like an unlocked keyring, on this machine only. A pass store the owner already has is used as it is.
+
+def ensure_pass(run: Callable[..., Any] = subprocess.run, home: Path | None = None) -> str:
+    home = home or Path.home()
+    if not shutil.which("pass"):
+        raise BridgeError("Proton Bridge keeps its sign-in in `pass`, which this machine doesn't have: add it once "
+                          "(Arch/Omarchy: sudo pacman -S pass; Ubuntu/Debian: sudo apt install pass), then press Set up "
+                          "Proton Mail again. A Souko from the image has it already.")
+    store = Path(os.environ.get("PASSWORD_STORE_DIR") or home / ".password-store")
+    if (store / ".gpg-id").is_file():
+        return "kept"
+    uid = "Hisho Proton Bridge <proton-bridge@hisho.invalid>"
+    res = run(["gpg", "--batch", "--passphrase", "", "--quick-gen-key", uid, "default", "default", "never"],
+              capture_output=True, text=True, timeout=120)
+    if res.returncode != 0 and "already exists" not in (res.stderr or ""):
+        raise BridgeError(f"couldn't make the key for Bridge's keychain: {(res.stderr or '').strip()[-200:]}")
+    res = run(["gpg", "--batch", "--with-colons", "--list-secret-keys", uid], capture_output=True, text=True, timeout=30)
+    fpr = next((ln.split(":")[9] for ln in (res.stdout or "").splitlines() if ln.startswith("fpr:")), "")
+    if not fpr:
+        raise BridgeError("couldn't find the key made for Bridge's keychain")
+    res = run(["pass", "init", fpr], capture_output=True, text=True, timeout=60)
+    if res.returncode != 0:
+        raise BridgeError(f"couldn't set up Bridge's keychain (pass init): {(res.stderr or '').strip()[-200:]}")
+    return "made"
 
 
 # ── running in the background ─────────────────────────────────────────────

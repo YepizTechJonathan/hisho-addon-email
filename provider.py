@@ -1579,6 +1579,8 @@ def connect_proton(address: str, values: dict[str, Any], bridge: Any = None) -> 
         return {"ok": False, "error": "type the Proton address (like alex@proton.me) first"}
     try:
         exe = bridge.install(bridge.BRIDGE["url"], bridge.BRIDGE["sha256"], bridge.BRIDGE["version"])
+        if hasattr(bridge, "ensure_pass"):
+            bridge.ensure_pass()
         bridge.stop()
         try:
             got = bridge.sign_in(exe, address, str(values.get("proton_password") or ""), str(values.get("proton_code") or ""),

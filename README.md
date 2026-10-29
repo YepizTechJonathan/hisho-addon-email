@@ -94,8 +94,8 @@ before.
 Set up this mailbox choose **Proton Mail**: Hisho installs Bridge on this machine (Proton's official package,
 checksum pinned, into Hisho's own folder), signs in to Proton once with your password and 2FA code (used once, not
 kept), switches Bridge to SSL and fills the mailbox with Bridge's own local address and password. Bridge then runs in
-the background (`hisho-proton-bridge.service`). Bridge keeps its sign-in in this machine's keychain: the desktop's
-login keyring, or `pass` on a server.
+the background (`hisho-proton-bridge.service`). Bridge keeps its sign-in in `pass` (a Souko from the image has it;
+elsewhere install `pass` once): with no pass store yet, Hisho makes one for it with its own key.
 
 ## Settings
 

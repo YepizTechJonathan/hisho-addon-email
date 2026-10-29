@@ -25,7 +25,7 @@ if mode == "nolib":
     sys.exit(127)
 print("Welcome to Proton Mail Bridge interactive shell", flush=True)
 if mode == "keychain":
-    print("Bridge cannot access the keychain: no supported password manager (secret-service or pass)", flush=True)
+    print("level=error msg=\"Keychain helper couldn't be created\" error=\"no keychain\"", flush=True)
     sys.exit(1)
 def ask(q):
     sys.stdout.write(q + ": "); sys.stdout.flush(); return sys.stdin.readline().strip()
@@ -62,6 +62,11 @@ def fake(tmp_path, monkeypatch):
     exe.write_text(FAKE.format(py=sys.executable))
     exe.chmod(0o755)
     return exe
+
+
+def test_a_line_naming_the_keychain_it_uses_is_not_an_error():
+    assert not proton.re.search(proton.KEYCHAIN, "level=info msg=\"Using keychain\" helper=secret-service")
+    assert proton.re.search(proton.KEYCHAIN, "error=\"no keychain\"")
 
 
 def test_sign_in_answers_bridges_prompts_switches_to_ssl_and_reads_its_settings(fake):
@@ -144,3 +149,24 @@ def test_a_missing_system_library_is_named_with_its_install_command(fake, monkey
     with pytest.raises(proton.BridgeError, match="libfido2.so.1") as e:
         proton.sign_in(fake, "alex@example.com", "right", "123456")
     assert "pacman -S libfido2" in str(e.value) and "apt install libfido2-1" in str(e.value)
+
+
+def test_bridge_gets_a_pass_store_of_its_own_when_there_is_none(tmp_path, monkeypatch):
+    """A desktop's login keyring may have no unlocked collection (the image test, 2026-10-29): Bridge prefers pass."""
+    import subprocess as sp
+    monkeypatch.setattr(proton.shutil, "which", lambda n: "/usr/bin/pass")
+    monkeypatch.delenv("PASSWORD_STORE_DIR", raising=False)
+    calls = []
+
+    def run(cmd, **kw):
+        calls.append(cmd)
+        out = "fpr:::::::::ABCDEF0123456789:\n" if "--list-secret-keys" in cmd else ""
+        return sp.CompletedProcess(cmd, 0, out, "")
+    assert proton.ensure_pass(run, home=tmp_path) == "made"
+    assert calls[0][:4] == ["gpg", "--batch", "--passphrase", ""] and calls[-1] == ["pass", "init", "ABCDEF0123456789"]
+    (tmp_path / ".password-store").mkdir()
+    (tmp_path / ".password-store" / ".gpg-id").write_text("x")
+    assert proton.ensure_pass(run, home=tmp_path) == "kept"          # the owner's own store is used as it is
+    monkeypatch.setattr(proton.shutil, "which", lambda n: None)
+    with pytest.raises(proton.BridgeError, match="pacman -S pass"):
+        proton.ensure_pass(run, home=tmp_path)
