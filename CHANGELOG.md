@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.3
+
+- Proton Mail: Proton's refusal is recognised in more of its wordings (wrong credentials, human verification), the sign-in waits up to 3 minutes, and every sign-in error carries Bridge's last lines.
+
 ## 0.9.2
 
 - Proton Mail: Bridge keeps its sign-in in pass (it prefers pass; a fresh desktop keyring had no unlocked collection and Bridge couldn't use it, found by the image test). With no pass store yet, Hisho makes one for Bridge with its own key; an existing store is used as it is. Keychain checks match Bridge's own error words only.

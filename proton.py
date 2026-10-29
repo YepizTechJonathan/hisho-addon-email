@@ -203,14 +203,15 @@ def sign_in(exe: Path | str, address: str, password: str, code: str = "", mailbo
         if i == 1 or re.search(KEYCHAIN, cli.seen):
             raise BridgeError(_keychain_words() + _tail(cli.seen))
         if i != 0:
-            raise BridgeError("Bridge didn't ask for the Proton address")
+            raise BridgeError("Bridge didn't ask for the Proton address." + _tail(cli.seen))
         cli.send(address)
         if cli.expect([r"Password"], 30)[0] != 0:
-            raise BridgeError("Bridge didn't ask for the password")
+            raise BridgeError("Bridge didn't ask for the password." + _tail(cli.seen))
         cli.send(password)
         while True:
             i, out = cli.expect([r"Two factor code", r"Mailbox password", r"was added successfully",
-                                 r"Cannot login:?[^\n]*", KEYCHAIN], 120)
+                                 r"Cannot login:?[^\n]*|(?i:incorrect (login )?credentials|human verification|captcha"
+                                 r"|invalid (username|password|login))", KEYCHAIN], 180)
             if i == 0:
                 if not code:
                     raise BridgeError("Proton asks for the 2FA code from your authenticator app: type it and try again")
@@ -222,13 +223,14 @@ def sign_in(exe: Path | str, address: str, password: str, code: str = "", mailbo
             elif i == 2:
                 break
             elif i == 3:
-                why = re.search(r"Cannot login:?\s*([^\n]*)", out)
+                why = re.search(r"Cannot login:?\s*([^\n]*)", out) or re.search(
+                    r"(?i)([^\n]*(incorrect|human verification|captcha|invalid)[^\n]*)", out)
                 raise BridgeError("Proton refused the sign-in: " + ((why.group(1).strip() if why else "") or "check "
                                   "the address, password and 2FA code"))
             elif i == 4:
                 raise BridgeError(_keychain_words() + _tail(cli.seen))
             else:
-                raise BridgeError("Bridge didn't answer the sign-in in time")
+                raise BridgeError("Bridge didn't answer the sign-in in time." + _tail(cli.seen))
         settings = _info(cli)
         for key, cmd in (("imap", "change imap-security"), ("smtp", "change smtp-security")):
             if settings.get(key, {}).get("security") != "SSL":     # the command toggles: only when it isn't SSL yet
