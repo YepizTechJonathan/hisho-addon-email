@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.1
+
+- Set up this mailbox knows Proton Mail and says plainly that it isn't supported yet (Proton lets other mail apps in only through its paid Proton Mail Bridge), instead of failing to sign in.
+
 ## 0.8.0
 
 - **Set up this mailbox** (addon.yaml `connect:`): company, address and app password are all it asks. The servers are

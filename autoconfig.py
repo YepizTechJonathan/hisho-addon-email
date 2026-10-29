@@ -80,6 +80,14 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "steps": "Settings > Privacy & Security > Manage app passwords and access > New app password, "
                  "access IMAP and SMTP",
     },
+    # Proton Mail has no IMAP of its own: mail apps reach it only through Proton Mail Bridge (paid plans), a program
+    # on a computer that serves IMAP/SMTP on 127.0.0.1. Not supported yet: setup says so instead of failing to sign in.
+    "proton": {
+        "name": "Proton Mail",
+        "hosts": ("proton.me", "protonmail.ch", "protonmail.com"), "mx": ("protonmail.ch", "proton.me"),
+        "unsupported": "Proton Mail can't be read by Hisho yet: Proton lets other mail apps in only through its Proton "
+                       "Mail Bridge program (on a paid plan), which Hisho doesn't use yet.",
+    },
 }
 
 #: Zoho serves each region from its own domain: the MX says which (mx.zoho.eu = the EU data centre).
@@ -217,6 +225,8 @@ def lookup(address: str, get: Callable[[str], str] | None = None,
         mx_list = (mx or (lambda d: mx_hosts(d, get)))(domain)
         top = mx_list[0] if mx_list else ""
         by_mx = next((k for k, p in PROVIDERS.items() if top and _ends(top, p["mx"])), "")
+        if by_mx and PROVIDERS[by_mx].get("unsupported"):
+            raise NotFound(PROVIDERS[by_mx]["unsupported"])
         if by_mx and not found:
             found, key, source = _known(by_mx, top), by_mx, f"its mail servers ({top})"
         elif by_mx and not key:

@@ -200,3 +200,9 @@ def test_port_587_is_encrypted_with_starttls_before_the_login(addon, monkeypatch
     monkeypatch.setattr(sender.smtplib, "SMTP", Plain)
     got = sender.smtp_login_test({"address": "alex@example.com", "smtp_host": "smtp.office365.com", "smtp_port": 587}, "pw")
     assert got["ok"] and log == [("connect", "smtp.office365.com", 587), ("starttls",), ("login", "alex@example.com"), ("quit",)]
+
+
+def test_a_proton_address_says_plainly_that_it_isnt_supported_yet():
+    import autoconfig as mailconf
+    with pytest.raises(mailconf.NotFound, match="Proton Mail Bridge"):
+        mailconf.lookup("someone@example.com", get=lambda url: "", mx=lambda d: ["mail.protonmail.ch"])
