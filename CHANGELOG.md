@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.0
+
+- **Set up this mailbox** (addon.yaml `connect:`): company, address and app password are all it asks. The servers are
+  looked up from the address (Mozilla's ISPDB, the domain's own autoconfig, then its MX records for Google
+  Workspace / Gmail, Microsoft 365 / Outlook, Zoho by region, iCloud, Yahoo, Fastmail, with their Sent and Trash
+  folder names), the login is tested, and the mailbox is saved. The message names the provider's app-password page;
+  a refused login (Test, or the 5-minute read) says the same, for any provider, not only Zoho.
+- The app password can be pasted (kept as a local secret); a secret's name still works.
+- Sending also works on port 587 with STARTTLS (Microsoft, iCloud); never unencrypted.
+- The IMAP sign-in function is now `imap_connect` (`connect` is the setup button's).
+
 ## 0.7.4
 
 - Every field on its setup form says in plain words what it is, and links to where to get it (addon.yaml `help:`, shown by Hisho's dashboard).

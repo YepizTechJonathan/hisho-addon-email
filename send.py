@@ -102,6 +102,21 @@ def validate(payload: Any) -> dict[str, Any]:
             "in_reply_to": irt, "references": refs}
 
 
+def open_smtp(host: str, port: int, smtp_factory: Callable[..., Any] = smtplib.SMTP_SSL) -> Any:
+    """An SMTP connection that is encrypted before the login: TLS from the start (465), or STARTTLS on 587
+    (Microsoft and iCloud offer only that). A server that won't start TLS on 587 is refused, never used in plain."""
+    context = ssl.create_default_context()
+    if port == 587 and smtp_factory is smtplib.SMTP_SSL:
+        s = smtplib.SMTP(host, port, timeout=30)
+        try:
+            s.starttls(context=context)
+        except Exception:
+            s.close()
+            raise
+        return s
+    return smtp_factory(host, port, context=context, timeout=30)
+
+
 def smtp_server(entry: dict[str, Any]) -> tuple[str, int]:
     """Zoho's SMTP host for this mailbox: the paid plan's smtppro with an imappro mailbox, else smtp."""
     host = entry.get("smtp_host") or ("smtppro.zoho.com" if str(entry.get("imap_host") or "").startswith("imappro")
@@ -288,7 +303,7 @@ def send(entries: dict[str, dict[str, Any]], ctx: Any, payload: dict[str, Any], 
         msg = build(entry, p)
         host, port = smtp_server(entry)
         try:
-            with smtp_factory(host, port, context=ssl.create_default_context(), timeout=30) as s:
+            with open_smtp(host, port, smtp_factory) as s:
                 s.login(str(entry["address"]), password)
                 refused = s.send_message(msg, from_addr=str(entry["address"]), to_addrs=p["to"] + p["cc"])
         except (smtplib.SMTPException, OSError, ssl.SSLError) as exc:
@@ -323,7 +338,7 @@ def smtp_login_test(entry: dict[str, Any], password: str, smtp_factory: Callable
     """Log in to SMTP and quit, sending nothing (the page's Test)."""
     host, port = smtp_server(entry)
     try:
-        with smtp_factory(host, port, context=ssl.create_default_context(), timeout=30) as s:
+        with open_smtp(host, port, smtp_factory) as s:
             s.login(str(entry["address"]), password)
         return {"ok": True, "message": f"SMTP {host}:{port} accepts the login (nothing sent)"}
     except (smtplib.SMTPException, OSError, ssl.SSLError) as exc:

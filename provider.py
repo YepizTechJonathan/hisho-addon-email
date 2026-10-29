@@ -44,6 +44,9 @@ _spec.loader.exec_module(sender)
 _spec = importlib.util.spec_from_file_location("hisho_addon_email_cleanup", Path(__file__).with_name("cleanup.py"))
 cleaner = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(cleaner)
+_spec = importlib.util.spec_from_file_location("hisho_addon_email_autoconfig", Path(__file__).with_name("autoconfig.py"))
+mailconf = importlib.util.module_from_spec(_spec)   # finds a mailbox's servers from its address (Set up this mailbox)
+_spec.loader.exec_module(mailconf)
 
 LABELS = ("Needs reply", "Customer request", "Bill or invoice", "Deadline", "Newsletter", "Junk")
 NEEDS_YOU = ("Needs reply", "Customer request", "Deadline", "Bill or invoice")   # Today.md lists these
@@ -111,7 +114,7 @@ class ReadOnlyIMAP(imaplib.IMAP4_SSL):
         return super()._command(name, *args)
 
 
-def connect(entry: dict[str, Any], password: str) -> Any:
+def imap_connect(entry: dict[str, Any], password: str) -> Any:
     conn = ReadOnlyIMAP(str(entry.get("imap_host") or DEFAULT_HOST), int(entry.get("imap_port") or DEFAULT_PORT),
                         ssl_context=ssl.create_default_context(), timeout=30)
     conn.login(str(entry["address"]), password)
@@ -821,7 +824,7 @@ def _poll_one(name: str, entry: dict[str, Any], ctx: Any, *, now: dt.datetime | 
             return state
     conn = None
     try:
-        conn = (connect_fn or connect)(entry, password)
+        conn = (connect_fn or imap_connect)(entry, password)
         validity, new, first, top = read_new(conn, str(entry.get("folder") or "INBOX"), state, now, first_days)
         kept = [] if first else list(state.get("messages") or [])
         known = {m["uid"] for m in kept}
@@ -967,7 +970,7 @@ def poll(name: str, entry: dict[str, Any], ctx: Any, *, now: dt.datetime | None 
 
     def opener(e: dict[str, Any], password: str) -> Any:
         if "conn" not in held:
-            held["conn"] = (connect_fn or connect)(e, password)
+            held["conn"] = (connect_fn or imap_connect)(e, password)
         return _Shared(held["conn"])
     try:
         st = _poll_one(name, {**entry, "folder": entry.get("folder") or "INBOX"}, ctx, now=now, ask=ask, connect_fn=opener)
@@ -1174,22 +1177,34 @@ def refusal(msg: str) -> str:
     low = msg.lower()
     if "enable imap" in low or "imap access" in low:
         return "imap-off"
-    if "authenticationfailed" in low or "invalid credentials" in low or "authentication failed" in low:
+    if ("authenticationfailed" in low or "invalid credentials" in low or "authentication failed" in low
+            or "login failed" in low or "authenticate failed" in low):
         return "password"
     return ""
 
 
 def explain(kind: str, entry: dict[str, Any], msg: str) -> str:
     who, secret = entry.get("address"), entry.get("password")
+    host = str(entry.get("imap_host") or DEFAULT_HOST)
+    zoho = mailconf.provider_for_host(host) == "zoho"
     if kind == "imap-off":
+        if not zoho:
+            return (f"IMAP is turned off for {who}. Turn it on in your mail provider's settings (IMAP access), then "
+                    "press Test on this page; Hisho also tries again every 30 minutes.")
         return (f"IMAP is turned off for {who}. Turn it on in Zoho Mail > Settings > Mail Accounts > IMAP Access "
                 "(if Zoho says to contact your administrator, also in the Zoho Mail Admin Console > Users > the user > "
                 "Mail Settings > IMAP). Hisho tries again every 30 minutes, or press Test on this page.")
     if kind == "password":
-        return (f"Zoho refused the password for {who}. With two-factor sign-in (TOTP) on, IMAP takes only an "
-                "app-specific password, not the account password: make one in Zoho > My Account > Security > App "
-                f"Passwords and save it in Infisical as {secret}. Hisho tries a new value at once; the refused one "
-                "only every 6 hours, so the mailbox isn't locked.")
+        where = (f"paste it on this mailbox's edit form (or save it in Infisical as {secret})"
+                 if not str(secret or "").startswith("HISHO_ADDON_") else "paste it on this mailbox's edit form")
+        key = mailconf.provider_for_host(host)
+        name = mailconf.PROVIDERS[key]["name"] if key else "The mail server"
+        make = (f"make one at {mailconf.app_password_page(key, host)} ({mailconf.PROVIDERS[key]['steps']})" if key
+                else "make one in your mail provider's security settings")
+        warning = (" " + mailconf.PROVIDERS[key]["warning"]) if key and mailconf.PROVIDERS[key].get("warning") else ""
+        return (f"{name} refused the password for {who}. With two-factor sign-in (TOTP) on, a mail app may sign in only "
+                f"with an app-specific password, not your normal one: {make}, and {where}.{warning} Hisho tries a new "
+                "value at once; the refused one only every 6 hours, so the mailbox isn't locked.")
     return f"can't read {who}: {msg}"
 
 
@@ -1494,7 +1509,7 @@ def test(entry: dict[str, Any], ctx: Any) -> dict[str, Any]:
         return {"ok": False, "error": f"no secret named {entry.get('password')} yet (Infisical or Bitwarden)"}
     conn = None
     try:
-        conn = connect(entry, password)
+        conn = imap_connect(entry, password)
         typ, data = conn.select(str(entry.get("folder") or "INBOX"), readonly=True)
         if typ != "OK":
             return {"ok": False, "error": f"logged in, but can't open {entry.get('folder') or 'INBOX'}"}
@@ -1503,13 +1518,41 @@ def test(entry: dict[str, Any], ctx: Any) -> dict[str, Any]:
         smtp = sender.smtp_login_test(entry, password)   # log in and quit; nothing is sent
         return {"ok": True, "message": msg + "; " + (smtp.get("message") or "SMTP refused: " + str(smtp.get("error")))}
     except (imaplib.IMAP4.error, OSError, ssl.SSLError) as exc:
-        return {"ok": False, "error": str(exc).replace(password, "***")[:200]}
+        msg = str(exc).replace(password, "***")[:200] if password else str(exc)[:200]
+        kind = refusal(msg)
+        return {"ok": False, "error": msg, **({"explain": explain(kind, entry, msg)} if kind else {})}
     finally:
         if conn is not None:
             try:
                 conn.logout()
             except Exception:  # noqa: BLE001
                 pass
+
+
+# ── Set up this mailbox (addon.yaml connect:) ─────────────────────────────
+
+def connect(values: dict[str, Any], ctx: Any) -> dict[str, Any]:
+    """Company, address and app password typed; the servers are looked up from the address (Mozilla's ISPDB, the
+    domain's own autoconfig, then its MX records for the big hosted providers). Core then tests the login and saves
+    it. The password is not used or repeated here."""
+    address = str(values.get("address") or "").strip()
+    try:
+        found = mailconf.lookup(address)
+    except mailconf.NotFound as exc:
+        return {"ok": False, "error": str(exc),
+                "explain": f"Hisho couldn't work out the mail servers for {address or 'that address'} by itself. Use "
+                           "+ add below with the full form: your mail provider's help lists its IMAP server (port 993) "
+                           "and SMTP server (port 465 or 587)."}
+    entry = {k: found[k] for k in ("imap_host", "imap_port", "smtp_host", "smtp_port", "sent_folder", "trash_folder",
+                                   "folders") if k in found}
+    who = found.get("name") or "its mail servers"
+    msg = (f"Found {who} ({found.get('source')}): reading {entry['imap_host']}, sending {entry['smtp_host']}:"
+           f"{entry['smtp_port']}.")
+    if found.get("app_password"):
+        msg += f" Its app passwords are made at {found['app_password']}."
+    if found.get("warning"):
+        msg += " " + found["warning"]
+    return {"ok": True, "entry": entry, "message": msg}
 
 
 def describe_secret(entry: dict[str, Any], ctx: Any) -> str:

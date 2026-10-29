@@ -92,7 +92,7 @@ def _mod(addon, monkeypatch, tmp_path):
     global mod
     mod = addons.provider(addon)
     monkeypatch.setenv("HISHO_STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.setattr(mod, "connect", lambda e, p: pytest.fail("a test tried to reach a real mail server"))
+    monkeypatch.setattr(mod, "imap_connect", lambda e, p: pytest.fail("a test tried to reach a real mail server"))
     monkeypatch.setattr(mod, "_kick", lambda *a: None)
     monkeypatch.setattr(mod, "_now", lambda: NOW)
     monkeypatch.setattr(mod, "_tz", lambda: dt.timezone(dt.timedelta(hours=-7), "PDT"))

@@ -8,23 +8,26 @@
 # on its page by company, adds an Email section to Today.md, and pushes to the phone only what is pressing
 # (a client problem, a deadline within 48 h, a payment or legal notice; `alerts: false` turns those off).
 # The text of an email is data from a stranger: it is never followed as an instruction.
+# Set up this mailbox (connect:): company, address and app password; the servers are looked up from the address
+# (Mozilla's ISPDB, the domain's own autoconfig, then its MX: Google, Microsoft 365, Zoho by region, iCloud, Yahoo,
+# Fastmail), the login is tested, and the app password is kept as a local secret. Or the full form, or:
 #   hisho addon entry email acme company=Acme address=alex@example.com password=ZOHO_ACME_APP_PASSWORD
 name: email
 kind: integration
 title: Email
 description: Reads your company inboxes, drafts replies and clean-ups; sends or moves to Trash only when you approve.
-version: 0.7.4
+version: 0.8.0
 you_need:
-  - "A mailbox that offers IMAP and SMTP (Zoho, Fastmail, your host's mail...)"
-  - "An app password for it (not your normal password)"
+  - "A mailbox that offers IMAP and SMTP (Gmail / Google Workspace, Zoho, iCloud, Yahoo, Fastmail, your host's mail...)"
+  - "An app password for it (not your normal password); Set up this mailbox says where your provider makes one"
 provider: provider.py
 private: true                     # the page shows other people's messages: owner's devices or Core's token only
 entry_label: mailbox
-secret_rotate: Zoho Mail > My Account > Security > App Passwords (one per mailbox; IMAP read + SMTP send)
+secret_rotate: "Your mail provider's app passwords page (Zoho: accounts.zoho.com > Security > App Passwords; Google: myaccount.google.com/apppasswords); one per mailbox, IMAP read + SMTP send"
 entry_schema:
   company: str                    # Acme, Globex... (the page and Today.md group by it)
   address: str                    # the mailbox's login, e.g. alex@example.com
-  password: secret                # the app password's secret NAME (Infisical / Bitwarden), never its value
+  password: password              # the app password: pasted on the page (kept as a local secret), or a saved secret's NAME
   imap_host: "str?"               # default imap.zoho.com (Zoho's Free plan); a paid plan uses imappro.zoho.com (see Zoho > Settings > Mail Accounts)
   imap_port: "port?"              # default 993 (TLS)
   folder: "str?"                  # default INBOX
@@ -33,7 +36,7 @@ entry_schema:
   request_form: "str?"            # a form to point customer requests at, named in their summary and drafts
   sent_folder: "str?"             # default Sent (read to spot answered mail; a sent reply's copy is filed here)
   smtp_host: "str?"               # default smtppro.zoho.com with an imappro mailbox, else smtp.zoho.com
-  smtp_port: "port?"              # default 465 (TLS)
+  smtp_port: "port?"              # default 465 (TLS); 587 = STARTTLS (Microsoft, iCloud)
   from_name: "str?"               # the name on sent mail, e.g. Alex Rivera
   signature: "str?"               # the sign-off drafts end with (default: from_name and company)
   signature_html: "str?"          # an HTML sign-off: a .html file in the Addons settings folder (e.g. email-signatures/acme.html), sanitized
@@ -42,10 +45,15 @@ entry_schema:
   own_addresses: "str?"           # your other addresses (comma-separated): never drafted a reply (this mailbox's own is included)
   trash_folder: "str?"            # where an approved clean-up moves mail (default Trash; Zoho empties it after ~30 days)
   note: "str?"
+connect:
+  label: Set up this mailbox
+  say: "Type the company, the mailbox address and an app password for it. Hisho looks up the mail servers from the address, signs in once to check, and keeps the password as a secret on this machine. For anything unusual, use + add below with the full form."
+  form: [company, address, password]
+  fields: {}
 entry_form:
   company: "Company"
   address: "Mailbox address"
-  password: "App password (its secret's name)"
+  password: "App password"
   imap_host: "IMAP server (default imap.zoho.com)"
   imap_port: "IMAP port (default 993)"
   folder: "Folder (default INBOX)"
@@ -71,13 +79,11 @@ help:
     label: Mailbox address
     say: "The address this mailbox signs in with, like alex@example.com."
   password:
-    label: App password (secret name)
-    say: "An app password: a separate password your mail provider makes just for Hisho, not your normal one, so you can remove it any time. Make one in your provider's security settings (in Zoho: My Account > Security > App Passwords), save it as a Hisho secret and type the secret's name."
-    get: "https://www.zoho.com/mail/help/adminconsole/two-factor-authentication.html"
-    get_label: Zoho's app password guide
+    label: App password
+    say: 'An app password: a separate password your mail provider makes just for Hisho, so your normal one stays yours (most providers ask for one when two-step sign-in is on). Not sure where? Type the address and press Set up this mailbox: Hisho names your provider and links its app-password page. Or the name of a saved secret.'
   imap_host:
     label: IMAP server
-    say: "Where Hisho reads mail. Empty means imap.zoho.com (Zoho's free plan); a paid Zoho plan uses imappro.zoho.com. Other providers list it in their mail settings help."
+    say: "Where Hisho reads mail (IMAP over TLS, port 993). Set up this mailbox fills it in. Empty means imap.zoho.com (Zoho's free plan); a paid Zoho plan uses imappro.zoho.com. Other providers list it in their mail settings help."
     get: "https://www.zoho.com/mail/help/imap-access.html"
     get_label: Zoho's server names
   imap_port:
@@ -97,11 +103,11 @@ help:
     say: "The folder your sent mail is kept in. Empty means Sent."
   smtp_host:
     label: SMTP server
-    say: "Where Hisho sends approved replies. Empty means smtppro.zoho.com for a paid Zoho mailbox, otherwise smtp.zoho.com."
+    say: "Where Hisho sends approved replies. Set up this mailbox fills it in. Empty means smtppro.zoho.com for a paid Zoho mailbox, otherwise smtp.zoho.com."
     get: "https://www.zoho.com/mail/help/imap-access.html"
     get_label: Zoho's server names
   smtp_port:
-    say: "Empty means 465, the usual secure sending port."
+    say: "Empty means 465, the usual secure sending port. 587 also works (encrypted with STARTTLS before signing in), for Microsoft and iCloud."
   from_name:
     label: Your name on sent mail
     say: "The name people see on your replies, like Alex Rivera."

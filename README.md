@@ -41,20 +41,21 @@ Reads your company inboxes, tells you what needs you, and drafts replies; **noth
   hours, a payment or legal notice); `alerts: false` keeps a mailbox to the page and Today.md.
 - Messages stay on the Core machine (`~/.local/state/hisho/addons/email/`), never in the vault.
 
-Each mailbox needs an **app password** (Zoho Mail > My Account > Security > App Passwords), stored in your
-secrets store under the name its entry gives; it is used for IMAP (reading) and SMTP (sending). Until it exists,
-the mailbox shows "waiting for app password": no error and no alert.
+Each mailbox needs an **app password** (a separate password your provider makes for one app; with two-step sign-in
+on, mail apps may use only that). It is used for IMAP (reading) and SMTP (sending). Pasted on the page it is kept as
+a local secret on the Core machine; or give the name of a secret in your secrets store. Until it exists, the
+mailbox shows "waiting for app password": no error and no alert.
 
 ## What it needs
 
 - You need:
-  - A mailbox that offers IMAP and SMTP (Zoho, Fastmail, your host's mail...)
-  - An app password for it (not your normal password)
+  - A mailbox that offers IMAP and SMTP (Gmail / Google Workspace, Zoho, iCloud, Yahoo, Fastmail, your host's mail...)
+  - An app password for it (not your normal password); Set up this mailbox says where your provider makes one
 - Runs on: the Core machine, inside Hisho Core
 - One entry per mailbox, each with:
   - `company` (str, required)
   - `address` (str, required)
-  - `password` (secret name, required)
+  - `password` (password, kept as a local secret, required)
   - `imap_host` (str, optional)
   - `imap_port` (port, optional)
   - `folder` (str, optional)
@@ -91,8 +92,25 @@ before.
 
 ## Settings
 
-On its page (**Add-ons > Email**), or in `~/Hisho/System/Config/Addons/email.yaml`. Secrets
-are given by name, never by value.
+**Set up this mailbox** (Add-ons > Email): type the company, the mailbox address and its app password, and press the
+button. Hisho works out the servers from the address: Mozilla's mail-settings database (ISPDB), then the domain's
+own autoconfig file, then where the domain's mail is delivered (its MX records) for Google Workspace / Gmail,
+Microsoft 365 / Outlook, Zoho (the right region: .com, .eu, .in, .com.au, .jp, .sa, zohocloud.ca), iCloud, Yahoo and
+Fastmail, whose Sent and Trash folder names it fills in too. It then signs in once to check (read only) and saves
+the mailbox. If the login is refused, it names your provider and its app-password page:
+
+| Provider | Make an app password at |
+|---|---|
+| Google (Gmail / Workspace) | https://myaccount.google.com/apppasswords (2-Step Verification on first) |
+| Zoho Mail | https://accounts.zoho.com/home#security/app_password (EU `accounts.zoho.eu`, India `accounts.zoho.in`, ...) |
+| iCloud Mail | https://account.apple.com > Sign-In and Security > App-Specific Passwords |
+| Yahoo Mail | https://login.yahoo.com/account/security > Generate app password |
+| Fastmail | https://app.fastmail.com/settings/security > Manage app passwords and access |
+| Microsoft (Outlook.com / 365) | https://account.microsoft.com/security; but Microsoft no longer lets mail apps sign in with a password (it wants OAuth, which this add-on doesn't do yet) |
+
+Sending uses TLS from the start (port 465) or STARTTLS on 587 (Microsoft, iCloud); it never signs in unencrypted.
+For anything unusual, **+ add** has the full form (servers, ports, folders). Entries are kept in
+`~/Hisho/System/Config/Addons/email.yaml`; there, secrets are given by name, never by value.
 
 ## How to remove
 

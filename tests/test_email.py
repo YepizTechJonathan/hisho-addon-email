@@ -77,7 +77,7 @@ def _mod(addon, monkeypatch, tmp_path):
     mod = addons.provider(addon)
     monkeypatch.setenv("HISHO_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.setattr(mod, "SYNC", True)
-    monkeypatch.setattr(mod, "connect", lambda e, p: pytest.fail("a test tried to reach a real mail server"))
+    monkeypatch.setattr(mod, "imap_connect", lambda e, p: pytest.fail("a test tried to reach a real mail server"))
     monkeypatch.setattr(mod, "_kick", lambda name, entry, ctx: None)   # summary() polls only where a test says so
     monkeypatch.setattr(mod, "_tz", lambda: dt.timezone(dt.timedelta(hours=-7), "PDT"))
     return mod
@@ -367,7 +367,7 @@ def test_summary_polls_in_the_background_every_5_minutes(monkeypatch, tmp_path):
 
 
 def test_default_host_is_imap_zoho_com_and_each_mailbox_can_change_it():
-    """A fresh copy of the provider: the autouse fixture stubs out connect() in the shared one."""
+    """A fresh copy of the provider: the autouse fixture stubs out imap_connect() in the shared one."""
     import importlib.util
     spec = importlib.util.spec_from_file_location("email_fresh", HERE / "provider.py")
     fresh = importlib.util.module_from_spec(spec)
@@ -381,8 +381,8 @@ def test_default_host_is_imap_zoho_com_and_each_mailbox_can_change_it():
         def login(self, user, password):
             pass
     fresh.ReadOnlyIMAP = Rec
-    fresh.connect(ENTRY, "pw")
-    fresh.connect({**ENTRY, "imap_host": "imappro.zoho.com", "imap_port": 1993}, "pw")
+    fresh.imap_connect(ENTRY, "pw")
+    fresh.imap_connect({**ENTRY, "imap_host": "imappro.zoho.com", "imap_port": 1993}, "pw")
     assert seen == [("imap.zoho.com", 993), ("imappro.zoho.com", 1993)]
 
 
