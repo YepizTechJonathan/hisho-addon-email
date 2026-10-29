@@ -191,7 +191,9 @@ def sign_in(exe: Path | str, address: str, password: str, code: str = "", mailbo
     uses. The password and code are typed into Bridge only; the result never contains them."""
     cli = (spawn or (lambda cmd: Pty(cmd)))([str(exe), "--cli"])
     try:
-        i, out = cli.expect([r"interactive shell|>>>", KEYCHAIN], 120)
+        i, out = cli.expect([r"interactive shell|>>>", KEYCHAIN, r"error while loading shared libraries: (\S+?):"], 120)
+        if i == 2:
+            raise BridgeError(_library_words(re.search(r"shared libraries: (\S+?):", out).group(1)))
         if i != 0:
             raise BridgeError(_keychain_words() if i == 1 else f"Bridge didn't start: {out.strip()[-200:]}")
         if re.search(KEYCHAIN, out):                     # it may say so right under its welcome line
@@ -246,6 +248,19 @@ def _info(cli: Any) -> dict[str, Any]:
     cli.send("info")
     _, out = cli.expect([r"SMTP Settings[\s\S]*Security:\s*\S+"], 30)
     return parse_info(out)
+
+
+LIBRARIES = {"libfido2": ("libfido2", "libfido2-1"), "libsecret-1": ("libsecret", "libsecret-1-0"),
+             "libglib-2.0": ("glib2", "libglib2.0-0"), "libgobject-2.0": ("glib2", "libglib2.0-0")}
+
+
+def _library_words(lib: str) -> str:
+    """Bridge needs a system library this machine lacks: which one, and the command that adds it."""
+    base = re.sub(r"\.so.*$", "", lib)
+    arch, deb = LIBRARIES.get(base, (base, base))
+    return (f"Proton Mail Bridge needs the system library {lib}, which this machine doesn't have. Add it once "
+            f"(Arch/Omarchy: sudo pacman -S {arch}; Ubuntu/Debian: sudo apt install {deb}), then press Set up Proton "
+            f"Mail again. A Souko from the image has it already.")
 
 
 def _keychain_words() -> str:

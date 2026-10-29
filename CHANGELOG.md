@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.1
+
+- Proton Mail: a missing system library (Bridge needs libfido2, libsecret, GLib) is named with the command that adds it; a Souko from the image has them.
+
 ## 0.9.0
 
 - Proton Mail: its own choice on Set up this mailbox. Hisho installs Proton Mail Bridge (Proton's official package, checksum pinned, unpacked into Hisho's own folder), signs in to Proton once (password and 2FA code used once, not kept), switches Bridge to SSL and fills the mailbox with Bridge's local settings and password; Bridge runs in the background (hisho-proton-bridge.service). Needs a paid Proton plan.

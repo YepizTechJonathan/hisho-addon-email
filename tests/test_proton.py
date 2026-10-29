@@ -20,6 +20,9 @@ FAKE = r'''#!{py}
 import os, sys
 mode = os.environ.get("FAKE_MODE", "ok")
 state = {{"imap": "STARTTLS", "smtp": "STARTTLS", "in": False}}
+if mode == "nolib":
+    print("bridge: error while loading shared libraries: libfido2.so.1: cannot open shared object file", flush=True)
+    sys.exit(127)
 print("Welcome to Proton Mail Bridge interactive shell", flush=True)
 if mode == "keychain":
     print("Bridge cannot access the keychain: no supported password manager (secret-service or pass)", flush=True)
@@ -133,3 +136,11 @@ def test_set_up_proton_fills_the_entry_with_bridges_settings_and_restarts_it(mon
     import ssl
     assert mod.tls_context("127.0.0.1").verify_mode == ssl.CERT_NONE
     assert mod.tls_context("imap.example.com").verify_mode == ssl.CERT_REQUIRED
+
+
+def test_a_missing_system_library_is_named_with_its_install_command(fake, monkeypatch):
+    """The image test found Bridge needs libfido2 (2026-10-29): the message names it and how to add it."""
+    monkeypatch.setenv("FAKE_MODE", "nolib")
+    with pytest.raises(proton.BridgeError, match="libfido2.so.1") as e:
+        proton.sign_in(fake, "alex@example.com", "right", "123456")
+    assert "pacman -S libfido2" in str(e.value) and "apt install libfido2-1" in str(e.value)
