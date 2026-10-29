@@ -13,7 +13,7 @@ name: email
 kind: integration
 title: Email
 description: Reads your company inboxes, drafts replies and clean-ups; sends or moves to Trash only when you approve.
-version: 0.7.3
+version: 0.7.4
 you_need:
   - "A mailbox that offers IMAP and SMTP (Zoho, Fastmail, your host's mail...)"
   - "An app password for it (not your normal password)"
@@ -63,3 +63,63 @@ entry_form:
   own_addresses: "Your other addresses (never replied to)"
   trash_folder: "Trash folder (default Trash)"
   note: "Note"
+
+help:
+  company:
+    say: "The company this mailbox belongs to. The page and Today's note group mail by it."
+  address:
+    label: Mailbox address
+    say: "The address this mailbox signs in with, like alex@example.com."
+  password:
+    label: App password (secret name)
+    say: "An app password: a separate password your mail provider makes just for Hisho, not your normal one, so you can remove it any time. Make one in your provider's security settings (in Zoho: My Account > Security > App Passwords), save it as a Hisho secret and type the secret's name."
+    get: "https://www.zoho.com/mail/help/adminconsole/two-factor-authentication.html"
+    get_label: Zoho's app password guide
+  imap_host:
+    label: IMAP server
+    say: "Where Hisho reads mail. Empty means imap.zoho.com (Zoho's free plan); a paid Zoho plan uses imappro.zoho.com. Other providers list it in their mail settings help."
+    get: "https://www.zoho.com/mail/help/imap-access.html"
+    get_label: Zoho's server names
+  imap_port:
+    say: "Empty means 993, the usual secure IMAP port."
+  folder:
+    say: "The folder to read. Empty means INBOX."
+  folders:
+    label: Other folders to read
+    say: "More folders to read, separated by commas. Empty means Newsletter, Notification (Zoho's filters)."
+  alerts:
+    label: Phone alerts
+    say: "On: a pressing email (a client problem, a deadline within 48 hours, a payment or legal notice) is pushed to your phone. Off: it only shows on the page and in Today's note."
+  request_form:
+    label: Request form link
+    say: "Optional. The web address of a form customers can use for requests, like https://example.com/request. Drafted replies point to it."
+  sent_folder:
+    say: "The folder your sent mail is kept in. Empty means Sent."
+  smtp_host:
+    label: SMTP server
+    say: "Where Hisho sends approved replies. Empty means smtppro.zoho.com for a paid Zoho mailbox, otherwise smtp.zoho.com."
+    get: "https://www.zoho.com/mail/help/imap-access.html"
+    get_label: Zoho's server names
+  smtp_port:
+    say: "Empty means 465, the usual secure sending port."
+  from_name:
+    label: Your name on sent mail
+    say: "The name people see on your replies, like Alex Rivera."
+  signature:
+    label: Sign-off
+    say: "How drafted replies end. Empty means your name and company."
+  signature_html:
+    label: HTML sign-off file
+    say: "Optional. A .html file in Hisho's add-on settings folder, like email-signatures/acme.html, used as a formatted sign-off."
+  phone:
+    say: "Optional. Adds a Phone line to the sign-off."
+  max_sends_per_hour:
+    label: Most sent per hour
+    say: "A safety limit on emails sent from this mailbox each hour. Empty means 10."
+  own_addresses:
+    label: Your other addresses
+    say: "Your other email addresses, separated by commas. Hisho never drafts a reply to them."
+  trash_folder:
+    say: "Where approved clean-ups move mail. Empty means Trash. Nothing is ever deleted for good."
+  note:
+    say: "Anything that helps you remember this mailbox."

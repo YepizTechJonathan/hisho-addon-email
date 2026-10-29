@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.4
+
+- Every field on its setup form says in plain words what it is, and links to where to get it (addon.yaml `help:`, shown by Hisho's dashboard).
+
 ## 0.7.3
 
 - README says what you need (addon.yaml you_need) and how to use it; the README check requires both.
