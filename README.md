@@ -90,6 +90,13 @@ before.
 
 **Add-ons > Email** shows each mailbox: what needs a reply, customer requests, bills and deadlines, with a drafted reply for each. **Send** puts the draft on Approvals: nothing goes out until you press Approve there. A daily **Clean up** card suggests newsletters and junk to move to Trash, again only on your press. The page is private: only your own devices see it.
 
+**Proton Mail**: Proton lets mail apps in only through its Proton Mail Bridge program, on a paid Proton plan. On
+Set up this mailbox choose **Proton Mail**: Hisho installs Bridge on this machine (Proton's official package,
+checksum pinned, into Hisho's own folder), signs in to Proton once with your password and 2FA code (used once, not
+kept), switches Bridge to SSL and fills the mailbox with Bridge's own local address and password. Bridge then runs in
+the background (`hisho-proton-bridge.service`). Bridge keeps its sign-in in this machine's keychain: the desktop's
+login keyring, or `pass` on a server.
+
 ## Settings
 
 **Set up this mailbox** (Add-ons > Email): type the company, the mailbox address and its app password, and press the

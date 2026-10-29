@@ -16,7 +16,7 @@ name: email
 kind: integration
 title: Email
 description: Reads your company inboxes, drafts replies and clean-ups; sends or moves to Trash only when you approve.
-version: 0.8.1
+version: 0.9.0
 you_need:
   - "A mailbox that offers IMAP and SMTP (Gmail / Google Workspace, Zoho, iCloud, Yahoo, Fastmail, your host's mail...)"
   - "An app password for it (not your normal password); Set up this mailbox says where your provider makes one"
@@ -50,6 +50,25 @@ connect:
   say: "Type the company, the mailbox address and an app password for it. Hisho looks up the mail servers from the address, signs in once to check, and keeps the password as a secret on this machine. For anything unusual, use + add below with the full form."
   form: [company, address, password]
   fields: {}
+  # Proton Mail: through Proton Mail Bridge (proton.py), its own choice with its own one-time sign-in
+  default_place: Any other provider
+  places:
+  - name: Proton Mail
+    label: Set up Proton Mail
+    say: 'Proton lets other mail apps in only through its Proton Mail Bridge program, on a paid Proton plan (Mail Plus, Proton Unlimited, or a business plan). Hisho installs Bridge on this machine and signs in to Proton once with what you type below: type the company and your Proton address above, leave App password empty (Bridge makes its own), then your Proton password and, if you use one, the 6-digit code from your authenticator app.'
+    get: https://proton.me/support/protonmail-bridge-install
+    get_label: About Proton Mail Bridge
+    fields:
+      proton_password:
+        label: Proton password
+        say: Used once to sign Bridge in; not kept.
+      proton_code:
+        label: 2FA code (if you use one)
+        optional: true
+        say: The 6-digit code from your authenticator app, right now.
+      proton_mailbox_password:
+        label: Mailbox password (only with two-password mode)
+        optional: true
 entry_form:
   company: "Company"
   address: "Mailbox address"

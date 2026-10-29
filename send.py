@@ -102,10 +102,20 @@ def validate(payload: Any) -> dict[str, Any]:
             "in_reply_to": irt, "references": refs}
 
 
+def tls_context(host: str) -> ssl.SSLContext:
+    """Checked TLS, except on this machine itself (Proton Mail Bridge on 127.0.0.1 has a certificate of its own;
+    that traffic never leaves the machine)."""
+    ctx = ssl.create_default_context()
+    if str(host).strip().lower() in ("127.0.0.1", "localhost", "::1"):
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+    return ctx
+
+
 def open_smtp(host: str, port: int, smtp_factory: Callable[..., Any] = smtplib.SMTP_SSL) -> Any:
     """An SMTP connection that is encrypted before the login: TLS from the start (465), or STARTTLS on 587
     (Microsoft and iCloud offer only that). A server that won't start TLS on 587 is refused, never used in plain."""
-    context = ssl.create_default_context()
+    context = tls_context(host)
     if port == 587 and smtp_factory is smtplib.SMTP_SSL:
         s = smtplib.SMTP(host, port, timeout=30)
         try:
@@ -264,7 +274,7 @@ def _copy_in_sent(entry: dict[str, Any], password: str, msg: email.message.Email
     """'zoho' when Zoho filed its own copy, 'appended' when we put one there, '' when neither worked."""
     folder = str(entry.get("sent_folder") or "Sent")
     host, port = str(entry.get("imap_host") or "imap.zoho.com"), int(entry.get("imap_port") or 993)
-    conn = imap_factory(host, port, ssl_context=ssl.create_default_context(), timeout=30)
+    conn = imap_factory(host, port, ssl_context=tls_context(host), timeout=30)
     conn.sent_folder = folder
     try:
         conn.login(str(entry["address"]), password)

@@ -47,6 +47,9 @@ _spec.loader.exec_module(cleaner)
 _spec = importlib.util.spec_from_file_location("hisho_addon_email_autoconfig", Path(__file__).with_name("autoconfig.py"))
 mailconf = importlib.util.module_from_spec(_spec)   # finds a mailbox's servers from its address (Set up this mailbox)
 _spec.loader.exec_module(mailconf)
+_spec = importlib.util.spec_from_file_location("hisho_addon_email_proton", Path(__file__).with_name("proton.py"))
+proton = importlib.util.module_from_spec(_spec)     # Proton Mail through Proton Mail Bridge (Set up > Proton Mail)
+_spec.loader.exec_module(proton)
 
 LABELS = ("Needs reply", "Customer request", "Bill or invoice", "Deadline", "Newsletter", "Junk")
 NEEDS_YOU = ("Needs reply", "Customer request", "Deadline", "Bill or invoice")   # Today.md lists these
@@ -114,9 +117,19 @@ class ReadOnlyIMAP(imaplib.IMAP4_SSL):
         return super()._command(name, *args)
 
 
+def tls_context(host: str) -> ssl.SSLContext:
+    """The usual checked TLS, except on this machine itself: Proton Mail Bridge serves IMAP/SMTP on 127.0.0.1 with a
+    certificate it made for itself, and that traffic never leaves the machine."""
+    ctx = ssl.create_default_context()
+    if str(host).strip().lower() in ("127.0.0.1", "localhost", "::1"):
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+    return ctx
+
+
 def imap_connect(entry: dict[str, Any], password: str) -> Any:
-    conn = ReadOnlyIMAP(str(entry.get("imap_host") or DEFAULT_HOST), int(entry.get("imap_port") or DEFAULT_PORT),
-                        ssl_context=ssl.create_default_context(), timeout=30)
+    host = str(entry.get("imap_host") or DEFAULT_HOST)
+    conn = ReadOnlyIMAP(host, int(entry.get("imap_port") or DEFAULT_PORT), ssl_context=tls_context(host), timeout=30)
     conn.login(str(entry["address"]), password)
     return conn
 
@@ -1534,8 +1547,10 @@ def test(entry: dict[str, Any], ctx: Any) -> dict[str, Any]:
 def connect(values: dict[str, Any], ctx: Any) -> dict[str, Any]:
     """Company, address and app password typed; the servers are looked up from the address (Mozilla's ISPDB, the
     domain's own autoconfig, then its MX records for the big hosted providers). Core then tests the login and saves
-    it. The password is not used or repeated here."""
+    it. The password is not used or repeated here. Proton Mail (its own choice on the page): Bridge, see proton.py."""
     address = str(values.get("address") or "").strip()
+    if values.get("_place") == "Proton Mail":
+        return connect_proton(address, values)
     try:
         found = mailconf.lookup(address)
     except mailconf.NotFound as exc:
@@ -1553,6 +1568,37 @@ def connect(values: dict[str, Any], ctx: Any) -> dict[str, Any]:
     if found.get("warning"):
         msg += " " + found["warning"]
     return {"ok": True, "entry": entry, "message": msg}
+
+
+def connect_proton(address: str, values: dict[str, Any], bridge: Any = None) -> dict[str, Any]:
+    """Proton Mail: install Bridge if needed, sign in once through it (Proton password and 2FA code typed on the page,
+    never kept), switch it to SSL, and fill the entry with its local settings and Bridge password. Bridge then runs in
+    the background (hisho-proton-bridge.service)."""
+    bridge = bridge or proton
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", address):
+        return {"ok": False, "error": "type the Proton address (like alex@proton.me) first"}
+    try:
+        exe = bridge.install(bridge.BRIDGE["url"], bridge.BRIDGE["sha256"], bridge.BRIDGE["version"])
+        bridge.stop()
+        try:
+            got = bridge.sign_in(exe, address, str(values.get("proton_password") or ""), str(values.get("proton_code") or ""),
+                                 str(values.get("proton_mailbox_password") or ""))
+        finally:
+            bridge.start(exe)
+    except bridge.BridgeError as exc:
+        return {"ok": False, "error": str(exc), "explain": str(exc)}
+    imap, smtp = got["imap"], got["smtp"]
+    if hasattr(bridge, "wait_port") and not bridge.wait_port(int(imap["port"])):
+        return {"ok": False, "error": "Bridge signed in but didn't start listening on this machine",
+                "explain": "Proton Mail Bridge is installed and signed in, but its background service didn't start. "
+                           "Press Set up Proton Mail again in a minute."}
+    entry = {"address": imap.get("user") or address, "password": imap["password"], "imap_host": imap["host"],
+             "imap_port": int(imap["port"]), "smtp_host": smtp["host"], "smtp_port": int(smtp["port"]),
+             "sent_folder": "Sent", "trash_folder": "Trash", "folders": ""}
+    return {"ok": True, "entry": entry,
+            "message": f"Proton Mail Bridge is set up and running on this machine for {address}: Hisho reads "
+                       f"{imap['host']}:{imap['port']} and sends through {smtp['host']}:{smtp['port']} with Bridge's own "
+                       f"password (saved as a secret). Your Proton password was used once and not kept."}
 
 
 def describe_secret(entry: dict[str, Any], ctx: Any) -> str:

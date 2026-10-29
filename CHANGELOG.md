@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.0
+
+- Proton Mail: its own choice on Set up this mailbox. Hisho installs Proton Mail Bridge (Proton's official package, checksum pinned, unpacked into Hisho's own folder), signs in to Proton once (password and 2FA code used once, not kept), switches Bridge to SSL and fills the mailbox with Bridge's local settings and password; Bridge runs in the background (hisho-proton-bridge.service). Needs a paid Proton plan.
+- Mail on this machine itself (127.0.0.1, Bridge's own certificate) is read and sent over TLS without checking that certificate; every other server's certificate is checked as before.
+
 ## 0.8.1
 
 - Set up this mailbox knows Proton Mail and says plainly that it isn't supported yet (Proton lets other mail apps in only through its paid Proton Mail Bridge), instead of failing to sign in.

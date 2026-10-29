@@ -81,12 +81,12 @@ PROVIDERS: dict[str, dict[str, Any]] = {
                  "access IMAP and SMTP",
     },
     # Proton Mail has no IMAP of its own: mail apps reach it only through Proton Mail Bridge (paid plans), a program
-    # on a computer that serves IMAP/SMTP on 127.0.0.1. Not supported yet: setup says so instead of failing to sign in.
+    # that serves IMAP/SMTP on 127.0.0.1. Its own choice on the page (proton.py); the lookup points there.
     "proton": {
         "name": "Proton Mail",
         "hosts": ("proton.me", "protonmail.ch", "protonmail.com"), "mx": ("protonmail.ch", "proton.me"),
-        "unsupported": "Proton Mail can't be read by Hisho yet: Proton lets other mail apps in only through its Proton "
-                       "Mail Bridge program (on a paid plan), which Hisho doesn't use yet.",
+        "unsupported": "Proton Mail works through Proton Mail Bridge (a paid Proton plan): choose Proton Mail at the "
+                       "top of Set up this mailbox and Hisho installs Bridge and signs in for you.",
     },
 }
 
