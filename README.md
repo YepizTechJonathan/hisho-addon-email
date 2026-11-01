@@ -90,12 +90,9 @@ before.
 
 **Add-ons > Email** shows each mailbox: what needs a reply, customer requests, bills and deadlines, with a drafted reply for each. **Send** puts the draft on Approvals: nothing goes out until you press Approve there. A daily **Clean up** card suggests newsletters and junk to move to Trash, again only on your press. The page is private: only your own devices see it.
 
-**Proton Mail**: Proton lets mail apps in only through its Proton Mail Bridge program, on a paid Proton plan. On
-Set up this mailbox choose **Proton Mail**: Hisho installs Bridge on this machine (Proton's official package,
-checksum pinned, into Hisho's own folder), signs in to Proton once with your password and 2FA code (used once, not
-kept), switches Bridge to SSL and fills the mailbox with Bridge's own local address and password. Bridge then runs in
-the background (`hisho-proton-bridge.service`). Bridge keeps its sign-in in `pass` (a Souko from the image has it;
-elsewhere install `pass` once): with no pass store yet, Hisho makes one for it with its own key.
+**Proton Mail is not supported** (since 0.10.0). A Proton address says so on Set up this mailbox, and a mailbox set
+up through Proton Mail Bridge before shows a warning on the page instead of being read. Any other provider works: the
+servers are looked up from the address, or typed by hand with **+ add**.
 
 ## Settings
 
