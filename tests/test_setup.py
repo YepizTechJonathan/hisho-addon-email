@@ -203,7 +203,7 @@ def test_port_587_is_encrypted_with_starttls_before_the_login(addon, monkeypatch
 
 
 def test_a_proton_address_says_proton_is_not_supported(conf):
-    """0.10.0: Proton Mail is no longer supported (Jonathan, 2026-11-01)."""
+    """0.10.0: Proton Mail is no longer supported (the owner, 2026-11-01)."""
     with pytest.raises(conf.NotFound, match="no longer supports Proton Mail"):
         conf.lookup("someone@example.com", get=lambda url: "", mx=lambda d: ["mail.protonmail.ch"])
     with pytest.raises(conf.NotFound, match="no longer supports Proton Mail"):
