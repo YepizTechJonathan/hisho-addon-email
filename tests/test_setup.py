@@ -202,7 +202,19 @@ def test_port_587_is_encrypted_with_starttls_before_the_login(addon, monkeypatch
     assert got["ok"] and log == [("connect", "smtp.office365.com", 587), ("starttls",), ("login", "alex@example.com"), ("quit",)]
 
 
-def test_a_proton_address_points_to_the_proton_choice():
-    import autoconfig as mailconf
-    with pytest.raises(mailconf.NotFound, match="choose Proton Mail"):
-        mailconf.lookup("someone@example.com", get=lambda url: "", mx=lambda d: ["mail.protonmail.ch"])
+def test_a_proton_address_says_proton_is_not_supported(conf):
+    """0.10.0: Proton Mail is no longer supported (Jonathan, 2026-11-01)."""
+    with pytest.raises(conf.NotFound, match="no longer supports Proton Mail"):
+        conf.lookup("someone@example.com", get=lambda url: "", mx=lambda d: ["mail.protonmail.ch"])
+    with pytest.raises(conf.NotFound, match="no longer supports Proton Mail"):
+        conf.lookup("someone@proton.me", get=lambda url: "", mx=lambda d: [])
+
+
+def test_a_mailbox_made_for_proton_warns_instead_of_failing_quietly(addon):
+    mod = addons.provider(addon)
+    out = mod.summary({"main": {"company": "Me", "address": "me@proton.me", "imap_host": "127.0.0.1",
+                                "imap_port": 1143}}, None)
+    assert out["problems"][0]["key"] == "proton" and "no longer supports Proton Mail" in out["problems"][0]["detail"]
+    assert not mod.was_proton({"address": "me@zoho.com", "imap_host": "imap.zoho.com", "imap_port": 993})
+    assert mod.tls_context("127.0.0.1").verify_mode.name == "CERT_REQUIRED"      # no exception for Bridge any more
+    assert mod.sender.tls_context("127.0.0.1").verify_mode.name == "CERT_REQUIRED"

@@ -103,13 +103,8 @@ def validate(payload: Any) -> dict[str, Any]:
 
 
 def tls_context(host: str) -> ssl.SSLContext:
-    """Checked TLS, except on this machine itself (Proton Mail Bridge on 127.0.0.1 has a certificate of its own;
-    that traffic never leaves the machine)."""
-    ctx = ssl.create_default_context()
-    if str(host).strip().lower() in ("127.0.0.1", "localhost", "::1"):
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-    return ctx
+    """Checked TLS, always (the exception for Proton Mail Bridge's own certificate on 127.0.0.1 went with Proton)."""
+    return ssl.create_default_context()
 
 
 def open_smtp(host: str, port: int, smtp_factory: Callable[..., Any] = smtplib.SMTP_SSL) -> Any:

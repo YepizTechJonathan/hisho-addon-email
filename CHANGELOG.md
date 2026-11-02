@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.0
+
+- Proton Mail removed: no Proton Mail choice on Set up this mailbox, no Proton Mail Bridge install (`proton.py` is gone), and mail is always sent and read over checked TLS (the exception for Bridge's own certificate on 127.0.0.1 is gone). A Proton address says plainly it isn't supported; a mailbox set up through Bridge before shows a warning instead of failing silently. Any other provider: looked up from the address, or typed by hand with + add.
+
 ## 0.9.3
 
 - Proton Mail: Proton's refusal is recognised in more of its wordings (wrong credentials, human verification), the sign-in waits up to 3 minutes, and every sign-in error carries Bridge's last lines.

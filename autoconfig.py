@@ -13,6 +13,10 @@ Nothing here signs in: the provider's Test does, once, with the app password typ
 """
 from __future__ import annotations
 
+#: Said for a Proton address and for a mailbox set up through Proton Mail Bridge before 0.10.0.
+PROTON_GONE = ("Hisho no longer supports Proton Mail. Use a mailbox at another provider, or type any provider's "
+               "IMAP and SMTP servers by hand with + add.")
+
 import json
 import re
 import urllib.parse
@@ -80,13 +84,11 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "steps": "Settings > Privacy & Security > Manage app passwords and access > New app password, "
                  "access IMAP and SMTP",
     },
-    # Proton Mail has no IMAP of its own: mail apps reach it only through Proton Mail Bridge (paid plans), a program
-    # that serves IMAP/SMTP on 127.0.0.1. Its own choice on the page (proton.py); the lookup points there.
+    # Proton Mail has no IMAP of its own (only through its Bridge program), and Hisho no longer supports it (0.10.0).
     "proton": {
         "name": "Proton Mail",
         "hosts": ("proton.me", "protonmail.ch", "protonmail.com"), "mx": ("protonmail.ch", "proton.me"),
-        "unsupported": "Proton Mail works through Proton Mail Bridge (a paid Proton plan): choose Proton Mail at the "
-                       "top of Set up this mailbox and Hisho installs Bridge and signs in for you.",
+        "unsupported": PROTON_GONE,
     },
 }
 
@@ -212,6 +214,9 @@ def lookup(address: str, get: Callable[[str], str] | None = None,
         raise NotFound("that isn't an email address (like alex@example.com)")
     get = get or fetch
     domain = address.split("@", 1)[1].lower()
+    for p in PROVIDERS.values():      # a provider Hisho doesn't support (Proton Mail) says so, whatever the lookups find
+        if p.get("unsupported") and domain in p.get("hosts", ()):
+            raise NotFound(p["unsupported"])
     found, source, mx_list = {}, "", None
     for url, name in ((f"https://autoconfig.thunderbird.net/v1.1/{domain}", "Mozilla's ISPDB"),
                       (f"https://autoconfig.{domain}/mail/config-v1.1.xml?emailaddress={urllib.parse.quote(address)}",
