@@ -97,3 +97,15 @@ def test_gmail_folders_with_spaces_are_quoted_and_every_label_is_read(mod):
     examined = [c[1] for c in box.cmds if c[0] == "EXAMINE"]
     assert '"[Gmail]/Sent Mail"' in examined and '"Family Stuff"' in examined and "INBOX" in examined
     assert mod.mailbox("INBOX") == "INBOX" and mod.mailbox('a"b') == '"a\\"b"'
+
+
+def test_the_setup_test_opens_the_sent_folder_too(mod, monkeypatch):
+    class NoSent(GmailBox):
+        def select(self, folder="INBOX", readonly=False):
+            if "Sent" in folder:
+                return "NO", [b"no such folder"]
+            return super().select(folder, readonly)
+    monkeypatch.setattr(mod, "imap_connect", lambda e, p: NoSent())
+    monkeypatch.setattr(mod.sender, "smtp_login_test", lambda e, p: pytest.fail("SMTP before the folders were fine"))
+    out = mod.test({**GMAIL, "sent_folder": "Sent Stuff"}, type("C", (), {"secret": lambda s, n: "pw"})())
+    assert not out["ok"] and "Sent folder 'Sent Stuff'" in out["error"] and "[Gmail]/Sent Mail" in out["explain"]

@@ -1659,7 +1659,7 @@ def morning(entries: dict[str, dict[str, Any]], ctx: Any) -> dict[str, Any]:
 
 
 def test(entry: dict[str, Any], ctx: Any) -> dict[str, Any]:
-    """Log in and open the folder read only (the page's Test / Save)."""
+    """Log in and open the folder and Sent read only, then sign in to SMTP (the page's Test / Save)."""
     try:
         password = ctx.secret(str(entry.get("password") or ""))
     except Exception:  # noqa: BLE001
@@ -1672,6 +1672,11 @@ def test(entry: dict[str, Any], ctx: Any) -> dict[str, Any]:
             return {"ok": False, "error": f"logged in, but can't open {entry.get('folder') or 'INBOX'}"}
         msg = (f"Logged in to {entry.get('address')} read only: "
                f"{int((data or [b'0'])[0] or 0)} messages in {entry.get('folder') or 'INBOX'}")
+        sent = str(entry.get("sent_folder") or "Sent")   # every read opens it too (answered mail): check it now, not later
+        if conn.select(mailbox(sent), readonly=True)[0] != "OK":
+            return {"ok": False, "error": f"logged in, but can't open the Sent folder {sent!r}",
+                    "explain": f"Hisho reads {sent} to see which emails you already answered. Check its name in your "
+                               "mailbox (Gmail: [Gmail]/Sent Mail, Outlook: Sent Items) and set it under + add."}
         smtp = sender.smtp_login_test(entry, password)   # log in and quit; nothing is sent
         return {"ok": True, "message": msg + "; " + (smtp.get("message") or "SMTP refused: " + str(smtp.get("error")))}
     except (imaplib.IMAP4.error, OSError, ssl.SSLError) as exc:

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.12.1
+
+- Test (and Set up this mailbox) also opens the Sent folder, which every read opens to spot answered mail: a Sent folder Hisho can't open now fails at setup with what to check, instead of at the first read (Gmail's "[Gmail]/Sent Mail" passed the test and failed the read before 0.12.0).
+
 ## 0.12.0
 
 - Folder names with a space (Gmail's "[Gmail]/Sent Mail", your own "Clients/Golden Coast") are sent quoted, as IMAP wants: a Gmail mailbox failed every read with "EXAMINE command error: BAD Could not parse command". Reading, filing a sent reply and clean-up's move to Trash all quote them.
