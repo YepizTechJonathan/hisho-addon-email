@@ -104,11 +104,11 @@ def _mod(addon, monkeypatch, tmp_path):
     monkeypatch.setattr(mod, "_tz", lambda: dt.timezone(dt.timedelta(hours=-7), "PDT"))
 
 
-def poll(box):
+def poll(box, entry=None, now=NOW, ask=None):
     def connect(e, p):
         box.login(e["address"], p)
         return box
-    return mod.poll("yt", YT, Ctx(), now=NOW, ask=claude, connect_fn=connect)
+    return mod.poll("yt", entry or YT, Ctx(), now=now, ask=ask or claude, connect_fn=connect)
 
 
 def test_all_folders_are_read_read_only_with_one_login():
@@ -132,7 +132,9 @@ def test_misfiled_real_mail_still_gets_its_label_draft_card_and_today_line():
     lines = mod.morning({"yt": YT}, Ctx())["lines"]
     assert any("Tripleseat" in l and "in Newsletter" in l for l in lines)
     sec = mod.details({"yt": YT}, Ctx())[0]
-    assert "Folders read: INBOX, Newsletter, Notification" in sec["facts"]
+    fact = next(f for f in sec["facts"] if f.startswith("Folders read:"))
+    assert fact.startswith("Folders read: INBOX, Newsletter, Notification; every folder but Trash, Drafts and Sent")
+    assert fact.endswith("Clean-up only in INBOX, Newsletter, Notification")
     assert any(i["id"] == "newsletter-4" and "in Newsletter" in i["facts"][0] for i in sec["items"])
 
 
@@ -143,8 +145,10 @@ def test_inbox_card_keys_are_unchanged():
 def test_a_missing_folder_is_named_on_the_page():
     box = Box()
     box.list = lambda: (box._cmd("LIST"), ("OK", [b'(\\HasNoChildren) "/" "INBOX"', b'(\\HasNoChildren) "/" "Newsletter"']))[1]
-    poll(box)
-    assert "Folders read: INBOX, Newsletter (not found: Notification)" in mod.details({"yt": YT}, Ctx())[0]["facts"]
+    named = {**YT, "folders": "Newsletter, Notification"}   # named folders (not the default, all)
+    poll(box, named)
+    fact = next(f for f in mod.details({"yt": named}, Ctx())[0]["facts"] if f.startswith("Folders read:"))
+    assert fact.startswith("Folders read: INBOX, Newsletter (not found: Notification). Clean-up only in")
 
 
 def test_cleanup_cards_are_per_folder_and_run_in_that_folder(monkeypatch):
@@ -162,7 +166,7 @@ def test_cleanup_cards_are_per_folder_and_run_in_that_folder(monkeypatch):
     r = mod.run_trash({"yt": YT}, Ctx(), mod.cleaner.validate(pay))
     assert r["ok"] and seen == {"folder": "Newsletter", "uids": [5]}
     bad = mod.cleaner.validate({**pay, "folder": "Archive"})
-    assert "isn't one of the folders" in mod.run_trash({"yt": YT}, Ctx(), bad)["error"]
+    assert "never cleans up Archive" in mod.run_trash({"yt": YT}, Ctx(), bad)["error"]
     with pytest.raises(mod.cleaner.CleanupError):
         mod.cleaner.validate({**pay, "folder": "Sent"})
 
@@ -184,4 +188,119 @@ def test_payments_is_read_but_never_cleaned_up(monkeypatch):
     forged = {"mailbox": "yt", "folder": "Payments", "uidvalidity": "3",
               "items": [{"uid": 7, "message_id": "<r1@zoho.com>", "from_addr": "store@zoho.com", "group": "Promotions"}]}
     monkeypatch.setattr(mod.cleaner, "trash", lambda *a, **k: pytest.fail("Payments must never be moved"))
-    assert "never cleans it up" in mod.run_trash({"yt": yt}, Ctx(), mod.cleaner.validate(forged))["error"]
+    assert "never cleans up Payments" in mod.run_trash({"yt": yt}, Ctx(), mod.cleaner.validate(forged))["error"]
+
+
+# ── 0.11.0: every folder (LIST), Spam shown but never acted on, moved mail recognised, clean-up scope unchanged ──
+
+ZOHO_LIST = [b'(\\HasNoChildren) "/" "INBOX"', b'(\\Noinferiors \\Drafts) "/" "Drafts"', b'(\\Noinferiors) "/" "Templates"',
+             b'(\\HasNoChildren) "/" "Snoozed"', b'(\\Noinferiors \\Sent) "/" "Sent"', b'(\\Noinferiors \\Junk) "/" "Spam"',
+             b'(\\HasNoChildren \\Trash) "/" "Trash"', b'(\\HasNoChildren) "/" "Notification"',
+             b'(\\HasNoChildren) "/" "Newsletter"', b'(\\HasNoChildren) "/" "Archive"', b'(\\HasNoChildren) "/" "Payments"',
+             b'(\\HasNoChildren) "/" "Clients/Golden Coast"']
+REAL = mail("Can you fix the contact form?", "Maria Lopez <maria@goldencoast.com>", "Thu, 22 Oct 2026 09:00:00 -0700",
+            "<maria1@gc.com>")
+
+
+def zoho_box():
+    box = Box()
+    box.folders.update({name: {} for name in ("Drafts", "Templates", "Snoozed", "Spam", "Trash", "Archive", "Payments",
+                                              "Clients/Golden Coast")})
+    box.list = lambda: (box._cmd("LIST"), ("OK", list(ZOHO_LIST)))[1]
+    return box
+
+
+def labeller(calls):
+    def ask(prompt):
+        if prompt.startswith("You sort the owner's business email"):
+            calls.append(prompt)
+            out = []
+            for n, subj in enumerate([l for l in prompt.splitlines() if l.startswith("Subject: ")], 1):
+                real = "contact form" in subj or "Tripleseat" in subj
+                out.append(json.dumps({"id": n, "label": "Customer request" if real else "Newsletter",
+                                       "summary": "Wants the contact form fixed" if real else "update",
+                                       **({"pressing": "client problem"} if "contact form" in subj else {})}))
+            return "\n".join(out)
+        return claude(prompt)
+    return ask
+
+
+def test_all_folders_by_default_but_trash_drafts_templates_and_sent():
+    box = zoho_box()
+    st = poll(box)
+    assert st["folders_found"] == ["Snoozed", "Spam", "Notification", "Newsletter", "Archive", "Payments",
+                                   "Clients/Golden Coast"]
+    assert st["folders_junk"] == ["Spam"]
+    examined = [c[1] for c in box.cmds if c[0] == "EXAMINE"]
+    assert not {"Drafts", "Templates", "Trash"} & set(examined)
+    assert examined.count("Sent") == 4   # answered mail once; the day's clean-up scan reads contacts per cleanable folder
+    box.cmds.clear()
+    poll(box, now=NOW + dt.timedelta(minutes=5))
+    assert [c[1] for c in box.cmds if c[0] == "EXAMINE"].count("Sent") == 1   # an ordinary poll: once, for every folder
+    assert "SELECT" not in [c[0] for c in box.cmds]
+    assert mod.wanted_folders({}) == ["all"] and mod.wanted_folders({"folders": "All"}) == ["all"]
+
+
+def test_a_new_folder_is_picked_up_at_the_next_poll():
+    box = zoho_box()
+    poll(box)
+    ZOHO = box.list
+    box.folders["Vendors"] = {}
+    box.list = lambda: (ZOHO()[0], ZOHO()[1] + [b'(\\HasNoChildren) "/" "Vendors"'])
+    assert "Vendors" in poll(box, now=NOW + dt.timedelta(minutes=5))["folders_found"]
+
+
+def test_real_mail_in_spam_shows_but_is_never_drafted_carded_or_pushed():
+    box = zoho_box()
+    box.folders["Spam"] = {9: REAL}
+    poll(box, ask=labeller([]))
+    m = mod.load_state("yt--spam")["messages"][0]
+    assert m["junk"] and m["label"] == "Customer request" and m["pressing"] == "client problem" and "draft" not in m
+    assert not [c for c in mod.proposals({"yt": YT}, Ctx()) if "Maria" in c["title"] or "contact form" in c["title"]]
+    assert not [p for p in mod.summary({"yt": YT}, Ctx())["problems"] if "Maria" in p["title"]]
+    assert any("contact form" in l and "in Spam" in l for l in mod.morning({"yt": YT}, Ctx())["lines"])
+
+
+def test_mail_moved_to_archive_is_recognised_not_labelled_drafted_carded_or_pushed_again():
+    box, calls = zoho_box(), []
+    box.folders["INBOX"] = {11: REAL}
+    later = NOW + dt.timedelta(minutes=5)
+    poll(box, ask=labeller(calls))
+    first = mod.load_state("yt")["messages"][0]
+    assert first["label"] == "Customer request" and first["draft"]
+    cards = [c for c in mod.proposals({"yt": YT}, Ctx()) if c["action"]["type"] == "email.send"]
+    # he files it in Archive: a new UID there, gone from the inbox
+    box.folders["INBOX"], box.folders["Archive"] = {}, {3: REAL}
+    calls.clear()
+    poll(box, now=later, ask=labeller(calls))
+    copy = mod.load_state("yt--archive")["messages"][0]
+    assert copy["moved_from"] == "INBOX" and copy["label"] == "Customer request" and "draft" not in copy
+    assert not any("contact form" in c for c in calls)   # not labelled again
+    again = [c for c in mod.proposals({"yt": YT}, Ctx()) if c["action"]["type"] == "email.send"]
+    assert [c["key"] for c in again] == [c["key"] for c in cards]   # one card, the original one
+    pushes = [p for p in mod.summary({"yt": YT}, Ctx())["problems"] if "client problem" in p["title"]]
+    assert len(pushes) <= 1 and all("archive" not in p["key"] for p in pushes)
+    lines = [l for l in mod.morning({"yt": YT}, Ctx())["lines"] if "contact form" in l]
+    assert len(lines) == 1 and "in Archive" in lines[0]   # once, where it is now
+
+
+def test_clean_up_scope_is_unchanged(monkeypatch):
+    box = zoho_box()
+    for f in ("Archive", "Spam", "Clients/Golden Coast", "Snoozed"):
+        box.folders[f] = {21: NEWS}
+    poll(box)
+    searched = {c[1] for c in box.cmds if c[0] == "UID" and c[1] == "SEARCH" and c[2:4] == (None, "ALL")}
+    folders = [c[1] for c in box.cmds if c[0] == "EXAMINE"]
+    assert searched   # the scan ran (inbox, Newsletter, Notification)...
+    for f in ("Archive", "Spam", "Clients/Golden Coast", "Snoozed", "Payments"):
+        assert not (mod.load_state(mod.stream_name("yt", f)).get("cleanup") or {}).get("cats"), f   # ...but not here
+    trash = {c["action"]["payload"]["folder"] for c in mod.proposals({"yt": YT}, Ctx())
+             if c["action"]["type"] == "email.trash"}
+    assert trash <= {"INBOX", "Newsletter", "Notification"}
+    monkeypatch.setattr(mod.cleaner, "trash", lambda *a, **k: pytest.fail("never moved"))
+    for f in ("Archive", "Spam", "Clients/Golden Coast", "Payments"):
+        forged = {"mailbox": "yt", "folder": f, "uidvalidity": "3",
+                  "items": [{"uid": 21, "message_id": "<news1@zoho.com>", "from_addr": "news@zoho.com",
+                             "group": "Newsletters"}]}
+        assert "never cleans up" in mod.run_trash({"yt": YT}, Ctx(), mod.cleaner.validate(forged))["error"]
+    assert "Archive" in folders

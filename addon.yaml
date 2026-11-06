@@ -1,4 +1,5 @@
-# Email: one entry per mailbox. Reading is READ ONLY: Hisho opens the inbox and Sent with IMAP EXAMINE and reads
+# Email: one entry per mailbox. Reading is READ ONLY: Hisho opens every folder (LIST finds them: Archive, Spam, Zoho's
+# smart filters, your own; not Trash, Drafts or templates) and Sent with IMAP EXAMINE and reads
 # with BODY.PEEK, so nothing is marked read, moved, flagged or deleted. Replies are DRAFTED and put on Hisho's
 # Approvals list; one is sent (send.py, SMTP) only when you press Send on its card, exactly as shown there.
 # Clean-up: once a day a card lists the newsletters, promotions, junk and old notices you don't need; Approve moves
@@ -16,7 +17,7 @@ name: email
 kind: integration
 title: Email
 description: Reads your company inboxes, drafts replies and clean-ups; sends or moves to Trash only when you approve.
-version: 0.10.1
+version: 0.11.0
 you_need:
   - "A mailbox that offers IMAP and SMTP (Gmail / Google Workspace, Zoho, iCloud, Yahoo, Fastmail, your host's mail...)"
   - "An app password for it (not your normal password); Set up this mailbox says where your provider makes one"
@@ -31,7 +32,7 @@ entry_schema:
   imap_host: "str?"               # default imap.zoho.com (Zoho's Free plan); a paid plan uses imappro.zoho.com (see Zoho > Settings > Mail Accounts)
   imap_port: "port?"              # default 993 (TLS)
   folder: "str?"                  # default INBOX
-  folders: "str?"                 # other folders read the same way (default "Newsletter, Notification": Zoho's smart filters); a Payments folder is read but never cleaned up
+  folders: "str?"                 # other folders read the same way: "all" (default: every folder but Trash, Drafts, templates and Sent, new ones too) or names; Spam is shown, never drafted, carded or pushed; clean-up only in the inbox, Newsletter and Notification
   alerts: "bool?"                 # false = pressing emails show on the page and in Today.md but never push (default true)
   request_form: "str?"            # a form to point customer requests at, named in their summary and drafts
   sent_folder: "str?"             # default Sent (read to spot answered mail; a sent reply's copy is filed here)
@@ -57,7 +58,7 @@ entry_form:
   imap_host: "IMAP server (default imap.zoho.com)"
   imap_port: "IMAP port (default 993)"
   folder: "Folder (default INBOX)"
-  folders: "Other folders to read (default Newsletter, Notification)"
+  folders: "Other folders to read (default all)"
   alerts: "Phone alerts for pressing emails (true/false)"
   request_form: "Customer request form link"
   sent_folder: "Sent folder (default Sent)"
@@ -92,7 +93,7 @@ help:
     say: "The folder to read. Empty means INBOX."
   folders:
     label: Other folders to read
-    say: "More folders to read, separated by commas. Empty means Newsletter, Notification (Zoho's filters)."
+    say: "Empty or all: every folder (Archive, Spam, your own, new ones as you make them) but Trash, Drafts and templates; Sent is read only to spot answered mail. Or the folders' names, separated by commas. Mail in Spam is listed but never answered, carded or pushed. Clean-up stays in the inbox and the Newsletter and Notification folders."
   alerts:
     label: Phone alerts
     say: "On: a pressing email (a client problem, a deadline within 48 hours, a payment or legal notice) is pushed to your phone. Off: it only shows on the page and in Today's note."

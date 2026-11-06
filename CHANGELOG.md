@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.11.0
+
+- Every folder is read (`folders: all`, now the default): Archive, Spam, Snoozed, Zoho's smart filters and your own folders, found with LIST at each poll so a new folder is picked up by itself; never Trash, Drafts or templates (by their special-use flag or usual name), and Sent stays the answered-mail check, now read once per poll for every folder. Still EXAMINE / BODY.PEEK only. Naming folders still works.
+- Spam: labelled and listed (misfiled real mail shows, "in Spam"), but never drafted, carded, read as a note from you, or pushed.
+- Moved mail: a message that turns up in another folder (Archive, back from Snoozed) is recognised by its Message-ID, keeps its label and summary, is listed once where it is now, and is never labelled, drafted, carded or pushed again.
+- Clean-up scope unchanged: only the inbox and the Newsletter and Notification folders are scanned or offered; Archive, Payments, Spam and your own folders never are (an approved card for one is refused).
+
 ## 0.10.1
 
 - A test's wording only; no change to what the add-on does.
