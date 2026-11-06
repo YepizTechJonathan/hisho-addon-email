@@ -490,9 +490,9 @@ def make_cleanup_card(name: str, entry: dict[str, Any], clean: dict[str, Any], k
                       validity: str, now: dt.datetime) -> dict[str, Any]:
     """Today's card: every email that may be cleaned, is old enough, is still in the inbox and wasn't offered."""
     clean = dict(clean)
-    if str(entry.get("folder") or "INBOX").lower() in KEEP_FOLDERS:
+    if not cleanable(str(entry.get("folder") or "INBOX")):
         clean["cards"] = {}
-        return clean   # Payments: never a clean-up card
+        return clean   # Archive, Payments, Spam, your own folders: never a clean-up card
     by_uid = {m["uid"]: m for m in kept}
     present, offered = set(clean.get("present") or []), {int(u) for u in clean.get("offered") or []}
     items = []
@@ -561,8 +561,9 @@ def run_trash(entries: dict[str, dict[str, Any]], ctx: Any, payload: dict[str, A
     if not base:
         return {"ok": False, "error": f"no mailbox {p['mailbox']} in email.yaml"}
     folder = p.get("folder") or "INBOX"
-    if folder.lower() in KEEP_FOLDERS:
-        return {"ok": False, "error": f"{folder} holds bills and receipts: Hisho never cleans it up"}
+    if not cleanable(folder):
+        return {"ok": False, "error": f"Hisho never cleans up {folder}: only the inbox and the Newsletter and "
+                                      "Notification folders"}
     known = dict((f.lower(), f) for _s, f in streams(p["mailbox"], base))
     if folder.lower() not in known:
         return {"ok": False, "error": f"{folder} isn't one of the folders Hisho reads for {p['mailbox']}"}
@@ -803,9 +804,16 @@ def _now() -> dt.datetime:
 
 def _poll_one(name: str, entry: dict[str, Any], ctx: Any, *, now: dt.datetime | None = None,
               ask: Callable[[str], str] | None = None, connect_fn: Callable[..., Any] | None = None,
-              first_days: int = FIRST_LOOK_DAYS) -> dict[str, Any]:
-    """One folder (``entry['folder']``): read what is new, label, draft, save. Never raises."""
+              first_days: int = FIRST_LOOK_DAYS, known: dict[str, dict[str, Any]] | None = None,
+              sent: dict[str, Any] | None = None, junk: bool = False) -> dict[str, Any]:
+    """One folder (``entry['folder']``): read what is new, label, draft, save. Never raises.
+
+    ``known``: the mailbox's other folders' messages by Message-ID. One that turns up here was moved (Archive,
+    back from Snoozed...): it keeps its label and summary and is never labelled, drafted, carded or pushed again.
+    ``sent``: the Sent folder as the inbox's poll just read it (one read per poll, not one per folder).
+    ``junk``: the Spam folder: read and labelled (misfiled real mail shows), but no draft, card, note or push."""
     now = now or _now()
+    moved = known
     state = load_state(name)
     state["last_poll"] = now.isoformat(timespec="seconds")
     secret = str(entry.get("password") or "")
@@ -834,14 +842,25 @@ def _poll_one(name: str, entry: dict[str, Any], ctx: Any, *, now: dt.datetime | 
         kept = [] if first else list(state.get("messages") or [])
         known = {m["uid"] for m in kept}
         for m in new:
-            if m["uid"] not in known:
-                kept.append({**m, "label": None, "summary": "", "pressing": "", "tries": 0, "first_look": first})
+            if m["uid"] in known:
+                continue
+            fresh = {**m, "label": None, "summary": "", "pressing": "", "tries": 0, "first_look": first,
+                     "seen": now.isoformat(timespec="seconds")}
+            if junk:
+                fresh["junk"] = True
+            was = (moved or {}).get(m.get("message_id") or "")
+            if was is not None:   # moved here from another folder: what Hisho knew of it, nothing done again
+                fresh.update({k: was[k] for k in ("label", "summary", "pressing", "answered", "tries", "note") if k in was})
+                fresh.update(moved_from=was.get("folder") or "INBOX", first_look=True, draft_tries=2)
+                fresh.pop("body", None)
+            kept.append(fresh)
         backfill(conn, kept, [m for m in kept if _wants_draft(m, now, entry) or _wants_note(m, now, entry)])
         clean = state.get("cleanup") or {}
-        scanning = _cleanup_due(clean, now)
+        scanning = _cleanup_due(clean, now) and cleanable(str(entry.get("folder") or "INBOX"))
         if scanning:
             clean = scan_inbox(conn, validity, clean)            # inbox still open, read only (headers)
-        state["sent"] = read_sent(conn, str(entry.get("sent_folder") or "Sent"), state.get("sent") or {}, now)
+        state["sent"] = sent if sent is not None else \
+            read_sent(conn, str(entry.get("sent_folder") or "Sent"), state.get("sent") or {}, now)
         if scanning:
             clean = read_contacts(conn, str(entry.get("sent_folder") or "Sent"), clean)
     except ReadOnlyViolation:
@@ -912,8 +931,20 @@ def _poll_one(name: str, entry: dict[str, Any], ctx: Any, *, now: dt.datetime | 
     return state
 
 
-DEFAULT_FOLDERS = "Newsletter, Notification"   # Zoho's smart filters file mail there, out of the inbox
-KEEP_FOLDERS = ("payments",)   # read like the rest, but never offered for clean-up (bills and receipts)
+DEFAULT_FOLDERS = "all"   # every folder LIST shows (Archive, Spam, Zoho's smart filters, your own), but those below
+#: never read as mail: Trash and Drafts (and templates); Sent is read only to spot answered mail (``read_sent``);
+#: \All / \Flagged are views of other folders (Gmail's All Mail), not mail of their own
+SKIP_USES = ("\\trash", "\\drafts", "\\sent", "\\all", "\\flagged")
+SKIP_NAMES = ("trash", "drafts", "draft", "templates", "sent", "sent items", "sent mail", "sent messages",
+              "deleted items", "deleted messages", "outbox", "[gmail]/all mail", "[gmail]/starred")
+JUNK_NAMES = ("spam", "junk", "junk e-mail", "junk email", "bulk mail", "[gmail]/spam")
+#: clean-up stays where it always was: the inbox and Zoho's smart-filter folders. Archive, Payments (bills and
+#: receipts), Spam and your own folders are read but never offered for clean-up.
+CLEAN_FOLDERS = ("inbox", "newsletter", "newsletters", "notification", "notifications")
+
+
+def cleanable(folder: str) -> bool:
+    return str(folder or "INBOX").lower() in CLEAN_FOLDERS
 
 
 class _Shared:
@@ -937,27 +968,48 @@ def stream_name(name: str, folder: str) -> str:
 
 
 def wanted_folders(entry: dict[str, Any]) -> list[str]:
+    """The ``folders`` setting: ``["all"]`` (the default) or the folder names given."""
     raw = entry.get("folders")
     raw = DEFAULT_FOLDERS if raw is None else raw
     items = raw if isinstance(raw, list) else str(raw).split(",")
-    return [x.strip() for x in items if x and x.strip() and x.strip().upper() != "INBOX"]
+    names = [x.strip() for x in items if x and x.strip() and x.strip().upper() != "INBOX"]
+    return ["all"] if any(n.lower() == "all" for n in names) else names
 
 
-def resolve_folders(conn: Any, wanted: list[str]) -> list[str]:
-    """The real IMAP names of the wanted folders (LIST, matched without case); missing ones are left out."""
-    if not wanted:
-        return []
+def list_folders(conn: Any) -> list[tuple[str, str]]:
+    """(name, flags in lower case) of every folder that can be opened (LIST, a read)."""
     try:
         typ, data = conn.list()
     except Exception:  # noqa: BLE001 -- a server (or a test stand-in) without LIST: the inbox only
         return []
-    names = []
+    out = []
     for line in (data or []) if typ == "OK" else []:
         text = line.decode("utf-8", "replace") if isinstance(line, bytes) else str(line or "")
         m = re.search(r'"([^"]*)"\s*$', text) or re.search(r"(\S+)\s*$", text)
-        if m and "\\noselect" not in text.lower():
-            names.append(m.group(1))
-    by_lower = {n.lower(): n for n in names}
+        flags = (re.match(r"\s*\(([^)]*)\)", text) or [None, ""])[1].lower()
+        if m and "\\noselect" not in flags and "\\nonexistent" not in flags:
+            out.append((m.group(1), flags))
+    return out
+
+
+def is_junk(name: str, flags: str) -> bool:
+    return "\\junk" in flags or name.lower() in JUNK_NAMES
+
+
+def resolve_folders(conn: Any, wanted: list[str], entry: dict[str, Any] | None = None) -> list[str]:
+    """The real IMAP names of the folders to read besides the inbox: with ``all``, every folder but the inbox, Trash,
+    Drafts, templates and Sent (by their special-use flag or usual name, and the entry's own sent / trash folder);
+    otherwise the named ones that exist (matched without case)."""
+    if not wanted:
+        return []
+    found = list_folders(conn)
+    if wanted == ["all"]:
+        own = {str((entry or {}).get(k) or d).lower() for k, d in (("sent_folder", "Sent"), ("trash_folder", "Trash"),
+                                                                    ("folder", "INBOX"))}
+        return [n for n, flags in found
+                if n.upper() != "INBOX" and n.lower() not in own and n.lower() not in SKIP_NAMES
+                and not any(u in flags for u in SKIP_USES)]
+    by_lower = {n.lower(): n for n, _f in found}
     return [by_lower[w.lower()] for w in wanted if w.lower() in by_lower]
 
 
@@ -977,16 +1029,25 @@ def poll(name: str, entry: dict[str, Any], ctx: Any, *, now: dt.datetime | None 
         if "conn" not in held:
             held["conn"] = (connect_fn or imap_connect)(e, password)
         return _Shared(held["conn"])
+    def others(sname: str) -> dict[str, dict[str, Any]]:
+        """The mailbox's messages in its other folders, by Message-ID: a message moved here is recognised."""
+        return {m["message_id"]: m for m in _all_messages(name, entry, dedupe=False)
+                if m.get("message_id") and m["_stream"] != sname}
     try:
-        st = _poll_one(name, {**entry, "folder": entry.get("folder") or "INBOX"}, ctx, now=now, ask=ask, connect_fn=opener)
+        st = _poll_one(name, {**entry, "folder": entry.get("folder") or "INBOX"}, ctx, now=now, ask=ask,
+                       connect_fn=opener, known=others(name))
         if st.get("status") == "ok" and "conn" in held:
-            found = resolve_folders(held["conn"], wanted_folders(entry))
+            listed = dict(list_folders(held["conn"]))
+            found = resolve_folders(held["conn"], wanted_folders(entry), entry)
+            junk = [f for f in found if is_junk(f, listed.get(f, ""))]
             st = load_state(name)
-            st["folders_found"] = found
+            st["folders_found"], st["folders_junk"] = found, junk
             save_state(name, st)
             for f in found:
-                _poll_one(stream_name(name, f), {**entry, "folder": f}, ctx, now=now, ask=ask, connect_fn=opener,
-                          first_days=DRAFT_DAYS)   # a folder's first look: the last week (misfiled mail, too)
+                sname = stream_name(name, f)
+                _poll_one(sname, {**entry, "folder": f}, ctx, now=now, ask=ask, connect_fn=opener,
+                          first_days=DRAFT_DAYS,   # a folder's first look: the last week (misfiled mail, too)
+                          known=others(sname), sent=st.get("sent"), junk=f in junk)
     finally:
         if "conn" in held:
             try:
@@ -996,13 +1057,21 @@ def poll(name: str, entry: dict[str, Any], ctx: Any, *, now: dt.datetime | None 
     return load_state(name)
 
 
-def _all_messages(name: str, entry: dict[str, Any]) -> list[dict[str, Any]]:
-    """Every folder's messages, each marked with its folder and its stream (for ids and keys)."""
+def _all_messages(name: str, entry: dict[str, Any], dedupe: bool = True) -> list[dict[str, Any]]:
+    """Every folder's messages, each marked with its folder and its stream (for ids and keys). A message seen in two
+    folders (moved after Hisho read it) counts once, where it was seen last."""
     out = []
     for sname, folder in streams(name, entry):
         for m in load_state(sname).get("messages") or []:
             out.append({**m, "folder": folder, "_stream": sname})
-    return out
+    if not dedupe:
+        return out
+    last: dict[str, dict[str, Any]] = {}
+    for m in out:
+        mid = m.get("message_id")
+        if mid and (mid not in last or str(m.get("seen") or "") > str(last[mid].get("seen") or "")):
+            last[mid] = m
+    return [m for m in out if not m.get("message_id") or last[m["message_id"]] is m]
 
 
 def _note_fact(m: dict[str, Any]) -> str:
@@ -1067,6 +1136,8 @@ Subject: {subject}
 
 
 def _wants_note(m: dict[str, Any], now: dt.datetime, entry: dict[str, Any] | None) -> bool:
+    if m.get("junk") or m.get("moved_from"):
+        return False   # Spam (a forged "from you" lands there) or a copy of one already read elsewhere
     return (entry is not None and str(m.get("from_addr") or "").lower() in own_addresses(entry) and "note" not in m
             and m["received"] >= (now - dt.timedelta(days=DRAFT_DAYS)).isoformat())
 
@@ -1166,6 +1237,8 @@ def run_setting(entries: dict[str, dict[str, Any]], ctx: Any, payload: dict[str,
 
 
 def _wants_draft(m: dict[str, Any], now: dt.datetime, entry: dict[str, Any] | None = None) -> bool:
+    if m.get("junk") or m.get("moved_from"):
+        return False   # Spam is shown, never answered; a moved copy was drafted (or not) where it was first read
     if entry is not None and str(m.get("from_addr") or "").lower() in own_addresses(entry):
         return False   # his own mail (a note to himself, a test): no reply draft
     return (m.get("label") in REPLY_LABELS and not m.get("answered") and not m.get("draft") and not automated(m.get("from_addr"))
@@ -1283,7 +1356,8 @@ def _summary(m: dict[str, Any], entry: dict[str, Any]) -> str:
 def _pressing(entry: dict[str, Any], state: dict[str, Any], now: dt.datetime) -> list[dict[str, Any]]:
     cutoff = (now - dt.timedelta(hours=ALERT_HOURS)).isoformat()
     return [m for m in state.get("messages") or []
-            if m.get("pressing") and not m.get("first_look") and not m.get("answered") and m["received"] >= cutoff]
+            if m.get("pressing") and not m.get("first_look") and not m.get("answered") and not m.get("junk")
+            and m["received"] >= cutoff]
 
 
 def was_proton(entry: dict[str, Any]) -> bool:
@@ -1414,9 +1488,16 @@ def details(entries: dict[str, dict[str, Any]], ctx: Any) -> list[dict[str, Any]
         day = [m for m in msgs if m["received"] >= (now - dt.timedelta(hours=DAY_HOURS)).isoformat()]
         found = st.get("folders_found")
         if found is not None:
-            missing = [w for w in wanted_folders(entry) if w.lower() not in {f.lower() for f in found}]
+            wanted = wanted_folders(entry)
+            missing = [w for w in wanted if w != "all" and w.lower() not in {f.lower() for f in found}]
             facts.append("Folders read: " + ", ".join([str(entry.get("folder") or "INBOX"), *found])
-                         + (f" (not found: {', '.join(missing)})" if missing else ""))
+                         + (f" (not found: {', '.join(missing)})" if missing else "")
+                         + ("; every folder but Trash, Drafts and Sent (Sent only to spot answered mail)"
+                            if wanted == ["all"] else "")
+                         + (f". {', '.join(st['folders_junk'])}: shown, never drafted, carded or pushed"
+                            if st.get("folders_junk") else "")
+                         + ". Clean-up only in " + ", ".join(f for f in [str(entry.get("folder") or "INBOX"), *found]
+                                                             if cleanable(f)))
         if status == "ok":
             facts.append(f"Last 24 h: {_counts(day)}")
         if st.get("claude_error"):
@@ -1612,8 +1693,8 @@ def _stream_cards(name: str, entry: dict[str, Any], company: str, sname: str, fo
     """One folder's cards; the inbox's keys are the mailbox's own (``reply:<mailbox>:...``), a folder's carry it."""
     out = []
     for m in st.get("messages") or []:
-        if m.get("answered") or m["received"] < recent:
-            continue
+        if m.get("answered") or m["received"] < recent or m.get("junk") or m.get("moved_from"):
+            continue   # Spam: shown, never carded; a moved copy: its card (if any) comes from where it was first read
         link = {"addon": "email", "entry": name, "item": _item_id({**m, "folder": folder})}
         if (m.get("draft") and m.get("from_addr") and m.get("label") in REPLY_LABELS and not automated(m["from_addr"])
                 and m["from_addr"].lower() not in own_addresses(entry)):
@@ -1634,7 +1715,7 @@ def _stream_cards(name: str, entry: dict[str, Any], company: str, sname: str, fo
                             f"{company}: {_summary(m, entry)} ({_sender(m)}, {when(m['received'], tz)})", 400)}},
                         "pressing": bool(m.get("pressing")) and not m.get("first_look")})
     for m in st.get("messages") or []:
-        note = m.get("note") or {}
+        note = m.get("note") or {} if not m.get("moved_from") else {}
         for n, c in enumerate(note.get("cards") or []):
             atype = {"today_add": "today_add", "new_email": "email.send"}.get(c["kind"], "email.setting")
             out.append({"key": f"note:{sname}:{st.get('uidvalidity')}:{m['uid']}:{n}", "company": company,
