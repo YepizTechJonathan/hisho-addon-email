@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.12.2
+
+- Spam goes, it doesn't sit there (Jonathan): junk in each mailbox's Spam folder is offered on the daily clean-up card like the inbox's (same age rule, moved to Trash only when you approve, never a permanent delete). Plain junk from Spam is no longer listed on the page or in Today.md, only counted ("3 junk in Spam: offered on the clean-up card"); a Spam email that looks real (it needs you, it's from someone you've written to, or it answers your mail) is listed as "possibly misfiled: check it" and never offered for clean-up.
+
 ## 0.12.1
 
 - Test (and Set up this mailbox) also opens the Sent folder, which every read opens to spot answered mail: a Sent folder Hisho can't open now fails at setup with what to check, instead of at the first read (Gmail's "[Gmail]/Sent Mail" passed the test and failed the read before 0.12.0).

@@ -7,8 +7,9 @@ Reads your company inboxes, tells you what needs you, and drafts replies; **noth
 - Every 5 minutes it reads what is new in each mailbox, **read only**: **every folder** (`folders`, default `all`:
   Archive, Spam, Zoho's smart filters, your own, and new ones as you make them; never Trash, Drafts or templates) and
   the Sent folder are opened with IMAP EXAMINE and read with BODY.PEEK, so nothing is marked read, moved, flagged or
-  deleted. Mail in **Spam** is labelled and listed (real mail filed there shows), but never drafted, carded or
-  pushed. Mail you **move** to another folder (Archive, back from Snoozed) is recognised by its Message-ID: it is
+  deleted. Junk in **Spam** is offered on the daily clean-up card (moved to Trash only when you approve) and only counted
+  in Today.md; a Spam email that looks real (it needs you, it's from someone you wrote to, or it answers your mail)
+  shows as "possibly misfiled: check it", never drafted, carded or pushed. Mail you **move** to another folder (Archive, back from Snoozed) is recognised by its Message-ID: it is
   listed once, where it is now, and never labelled, drafted, carded or pushed a second time.
 - Claude (no tools) gives each new email one label, **Needs reply, Customer request, Bill or invoice, Deadline,
   Newsletter or Junk**, and a one-line summary. An email's text is treated as a stranger's words: it is never

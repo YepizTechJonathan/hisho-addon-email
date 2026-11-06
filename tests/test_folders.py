@@ -234,7 +234,7 @@ def test_all_folders_by_default_but_trash_drafts_templates_and_sent():
     assert st["folders_junk"] == ["Spam"]
     examined = [c[1] for c in box.cmds if c[0] == "EXAMINE"]
     assert not {"Drafts", "Templates", "Trash"} & set(examined)
-    assert examined.count("Sent") == 4   # answered mail once; the day's clean-up scan reads contacts per cleanable folder
+    assert examined.count("Sent") == 5   # answered mail once; the day's clean-up scan reads contacts per cleanable folder
     box.cmds.clear()
     poll(box, now=NOW + dt.timedelta(minutes=5))
     assert [c[1] for c in box.cmds if c[0] == "EXAMINE"].count("Sent") == 1   # an ordinary poll: once, for every folder
@@ -285,7 +285,7 @@ def test_mail_moved_to_archive_is_recognised_not_labelled_drafted_carded_or_push
     assert len(lines) == 1 and "in Archive" in lines[0]   # once, where it is now
 
 
-def test_clean_up_scope_is_unchanged(monkeypatch):
+def test_clean_up_scope_is_the_inbox_the_filters_and_spam(monkeypatch):
     box = zoho_box()
     for f in ("Archive", "Spam", "Clients/Golden Coast", "Snoozed"):
         box.folders[f] = {21: NEWS}
@@ -293,15 +293,52 @@ def test_clean_up_scope_is_unchanged(monkeypatch):
     searched = {c[1] for c in box.cmds if c[0] == "UID" and c[1] == "SEARCH" and c[2:4] == (None, "ALL")}
     folders = [c[1] for c in box.cmds if c[0] == "EXAMINE"]
     assert searched   # the scan ran (inbox, Newsletter, Notification)...
-    for f in ("Archive", "Spam", "Clients/Golden Coast", "Snoozed", "Payments"):
+    for f in ("Archive", "Clients/Golden Coast", "Snoozed", "Payments"):
         assert not (mod.load_state(mod.stream_name("yt", f)).get("cleanup") or {}).get("cats"), f   # ...but not here
+    assert (mod.load_state("yt--spam").get("cleanup") or {}).get("cats")   # Spam is scanned (0.12.2)
     trash = {c["action"]["payload"]["folder"] for c in mod.proposals({"yt": YT}, Ctx())
              if c["action"]["type"] == "email.trash"}
-    assert trash <= {"INBOX", "Newsletter", "Notification"}
+    assert trash <= {"INBOX", "Newsletter", "Notification", "Spam"} and "Spam" in trash
     monkeypatch.setattr(mod.cleaner, "trash", lambda *a, **k: pytest.fail("never moved"))
-    for f in ("Archive", "Spam", "Clients/Golden Coast", "Payments"):
+    for f in ("Archive", "Clients/Golden Coast", "Payments"):
         forged = {"mailbox": "yt", "folder": f, "uidvalidity": "3",
                   "items": [{"uid": 21, "message_id": "<news1@zoho.com>", "from_addr": "news@zoho.com",
                              "group": "Newsletters"}]}
         assert "never cleans up" in mod.run_trash({"yt": YT}, Ctx(), mod.cleaner.validate(forged))["error"]
     assert "Archive" in folders
+
+
+def test_spam_junk_is_counted_not_listed_and_real_looking_spam_is_flagged():
+    box = zoho_box()
+    junk = mail("You won a cruise", "Prize <win@scam.example>", "Thu, 22 Oct 2026 09:00:00 -0700", "<scam1@x>")
+    box.folders["Spam"] = {9: REAL, 10: junk}   # REAL: a customer asking to fix the contact form
+
+    def ask(prompt):
+        if prompt.startswith("You sort the owner's business email"):
+            out = []
+            for n, subj in enumerate([l for l in prompt.splitlines() if l.startswith("Subject: ")], 1):
+                real = "contact form" in subj
+                out.append(json.dumps({"id": n, "label": "Customer request" if real else "Junk",
+                                       "summary": "Wants the contact form fixed" if real else "prize scam"}))
+            return "\n".join(out)
+        return claude(prompt)
+    poll(box, ask=ask)
+    lines = mod.morning({"yt": YT}, Ctx())["lines"]
+    assert any("contact form" in l and "possibly misfiled in Spam: check it" in l for l in lines)
+    assert not any("cruise" in l for l in lines) and any("1 junk in Spam: offered on the clean-up card" in l for l in lines)
+    items = mod.details({"yt": YT}, Ctx())[0]["items"]
+    assert not any("cruise" in i["name"] for i in items)
+    assert any("contact form" in i["name"] and "possibly misfiled" in i["facts"][0] for i in items)
+
+
+def test_an_approved_spam_card_moves_to_trash(monkeypatch):
+    box = zoho_box()
+    box.folders["Spam"] = {21: NEWS}
+    poll(box)
+    card = next(c for c in mod.proposals({"yt": YT}, Ctx())
+                if c["action"]["type"] == "email.trash" and c["action"]["payload"]["folder"] == "Spam")
+    seen = {}
+    monkeypatch.setattr(mod.cleaner, "trash", lambda entry, pw, p, **kw: seen.update(folder=entry["folder"]) or
+                        {"ok": True, "moved": [21], "message": "Moved 1 email to Trash."})
+    assert mod.run_trash({"yt": YT}, Ctx(), mod.cleaner.validate(card["action"]["payload"]))["ok"]
+    assert seen == {"folder": "Spam"}

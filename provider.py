@@ -500,12 +500,12 @@ def never_clean(c: dict[str, Any], m: dict[str, Any] | None, clean: dict[str, An
 
 
 def make_cleanup_card(name: str, entry: dict[str, Any], clean: dict[str, Any], kept: list[dict[str, Any]],
-                      validity: str, now: dt.datetime) -> dict[str, Any]:
+                      validity: str, now: dt.datetime, junk: bool = False) -> dict[str, Any]:
     """Today's card: every email that may be cleaned, is old enough, is still in the inbox and wasn't offered."""
     clean = dict(clean)
-    if not cleanable(str(entry.get("folder") or "INBOX")):
+    if not cleanable(str(entry.get("folder") or "INBOX"), junk):
         clean["cards"] = {}
-        return clean   # Archive, Payments, Spam, your own folders: never a clean-up card
+        return clean   # Archive, Payments, your own folders: never a clean-up card
     by_uid = {m["uid"]: m for m in kept}
     present, offered = set(clean.get("present") or []), {int(u) for u in clean.get("offered") or []}
     items = []
@@ -574,8 +574,9 @@ def run_trash(entries: dict[str, dict[str, Any]], ctx: Any, payload: dict[str, A
     if not base:
         return {"ok": False, "error": f"no mailbox {p['mailbox']} in email.yaml"}
     folder = p.get("folder") or "INBOX"
-    if not cleanable(folder):
-        return {"ok": False, "error": f"Hisho never cleans up {folder}: only the inbox and the Newsletter and "
+    junk_folders = {f.lower() for f in load_state(p["mailbox"]).get("folders_junk") or []}
+    if not cleanable(folder, folder.lower() in junk_folders):
+        return {"ok": False, "error": f"Hisho never cleans up {folder}: only the inbox, Spam and the Newsletter and "
                                       "Notification folders"}
     known = dict((f.lower(), f) for _s, f in streams(p["mailbox"], base))
     if folder.lower() not in known:
@@ -912,7 +913,7 @@ def _poll_one(name: str, entry: dict[str, Any], ctx: Any, *, now: dt.datetime | 
             kept.append(fresh)
         backfill(conn, kept, [m for m in kept if _wants_draft(m, now, entry) or _wants_note(m, now, entry)])
         clean = state.get("cleanup") or {}
-        scanning = _cleanup_due(clean, now) and cleanable(str(entry.get("folder") or "INBOX"))
+        scanning = _cleanup_due(clean, now) and cleanable(str(entry.get("folder") or "INBOX"), junk)
         if scanning:
             clean = scan_inbox(conn, validity, clean)            # inbox still open, read only (headers)
         state["sent"] = sent if sent is not None else \
@@ -978,7 +979,7 @@ def _poll_one(name: str, entry: dict[str, Any], ctx: Any, *, now: dt.datetime | 
     if scanning:
         try:
             clean = sort_for_cleanup(entry, clean, kept, now, ask)
-            clean = make_cleanup_card(name, entry, clean, kept, validity, now)
+            clean = make_cleanup_card(name, entry, clean, kept, validity, now, junk=junk)
         except Exception as exc:  # noqa: BLE001 -- tried again at the next poll
             clean["error"] = str(exc)[:200]
     state["cleanup"] = clean
@@ -999,8 +1000,10 @@ JUNK_NAMES = ("spam", "junk", "junk e-mail", "junk email", "bulk mail", "[gmail]
 CLEAN_FOLDERS = ("inbox", "newsletter", "newsletters", "notification", "notifications")
 
 
-def cleanable(folder: str) -> bool:
-    return str(folder or "INBOX").lower() in CLEAN_FOLDERS
+def cleanable(folder: str, junk: bool = False) -> bool:
+    """Whether clean-up may offer this folder's mail: the inbox, Zoho's smart-filter folders, and Spam (0.12.2,
+    Jonathan: spam should go, not sit there); never Archive, Payments or your own folders."""
+    return junk or str(folder or "INBOX").lower() in CLEAN_FOLDERS or str(folder or "").lower() in JUNK_NAMES
 
 
 class _Shared:
@@ -1128,6 +1131,30 @@ def _all_messages(name: str, entry: dict[str, Any], dedupe: bool = True) -> list
         if mid and (mid not in last or str(m.get("seen") or "") > str(last[mid].get("seen") or "")):
             last[mid] = m
     return [m for m in out if not m.get("message_id") or last[m["message_id"]] is m]
+
+
+def misfiled(m: dict[str, Any], contacts: set[str], answered_refs: set[str]) -> bool:
+    """A Spam message that looks like real mail: one that needs him (a reply, a customer, a bill, a deadline), from
+    someone he has written to, or a reply to one of his own emails."""
+    return (m.get("label") in NEEDS_YOU or str(m.get("from_addr") or "").lower() in contacts
+            or bool(m.get("in_reply_to") and m["in_reply_to"] in answered_refs))
+
+
+def reported(name: str, entry: dict[str, Any]) -> tuple[list[dict[str, Any]], int]:
+    """What the page, Today.md and the counts show: every folder's mail but plain junk in Spam (it waits on the
+    clean-up card); a Spam message that looks real is kept, marked ``misfiled``. Returns (messages, junk in Spam)."""
+    st = load_state(name)
+    contacts = {c.lower() for c in (st.get("cleanup") or {}).get("contacts") or []}
+    refs = set((st.get("sent") or {}).get("refs") or [])
+    out, junk = [], 0
+    for m in _all_messages(name, entry):
+        if not m.get("junk"):
+            out.append(m)
+        elif misfiled(m, contacts, refs):
+            out.append({**m, "misfiled": True})
+        else:
+            junk += 1
+    return out, junk
 
 
 def _note_fact(m: dict[str, Any]) -> str:
@@ -1454,7 +1481,7 @@ def summary(entries: dict[str, dict[str, Any]], ctx: Any) -> dict[str, Any]:
             heads.append(f"{company}: first look…")
             continue
         day = (now - dt.timedelta(hours=DAY_HOURS)).isoformat()
-        every = _all_messages(name, entry)
+        every, _junk = reported(name, entry)
         need = [m for m in every if kind(m) in ACT_VERBS and m["received"] >= day]
         heads.append(f"{company}: {len(need)} need you (24 h)")
         for sname, _folder in streams(name, entry):
@@ -1542,7 +1569,8 @@ def details(entries: dict[str, dict[str, Any]], ctx: Any) -> list[dict[str, Any]
             facts.append("First look in progress (the last 2 days; nothing from it is pushed).")
         if st.get("checked"):
             facts.append(f"Last read {when(st['checked'], tz)}; every 5 minutes")
-        msgs = sorted(_all_messages(name, entry), key=lambda m: m["received"])
+        shown, junk = reported(name, entry)
+        msgs = sorted(shown, key=lambda m: m["received"])
         day = [m for m in msgs if m["received"] >= (now - dt.timedelta(hours=DAY_HOURS)).isoformat()]
         found = st.get("folders_found")
         if found is not None:
@@ -1552,10 +1580,12 @@ def details(entries: dict[str, dict[str, Any]], ctx: Any) -> list[dict[str, Any]
                          + (f" (not found: {', '.join(missing)})" if missing else "")
                          + ("; every folder but Trash, Drafts and Sent (Sent only to spot answered mail)"
                             if wanted == ["all"] else "")
-                         + (f". {', '.join(st['folders_junk'])}: shown, never drafted, carded or pushed"
+                         + (f". {', '.join(st['folders_junk'])}: junk waits on the clean-up card ({junk} now); "
+                            "anything that looks real shows here as possibly misfiled, never drafted, carded or pushed"
                             if st.get("folders_junk") else "")
-                         + ". Clean-up only in " + ", ".join(f for f in [str(entry.get("folder") or "INBOX"), *found]
-                                                             if cleanable(f)))
+                         + ". Clean-up only in " + ", ".join(
+                             f for f in [str(entry.get("folder") or "INBOX"), *found]
+                             if cleanable(f, f in (st.get("folders_junk") or []))))
         if status == "ok":
             facts.append(f"Last 24 h: {_counts(day)}")
         if st.get("claude_error"):
@@ -1569,7 +1599,7 @@ def details(entries: dict[str, dict[str, Any]], ctx: Any) -> list[dict[str, Any]
                   "facts": [f"{m.get('label') or 'not labelled'}{' · ⚠ ' + m['pressing'] if m.get('pressing') and not m.get('answered') else ''}"
                             f"{' · ✓ answered' if m.get('answered') else ''}{' · reply drafted (Approvals)' if m.get('draft') and not m.get('answered') else ''}"
                             f" · {_sender(m)} · {when(m['received'], tz)}"
-                            f"{' · in ' + m['folder'] if (m.get('folder') or 'INBOX').upper() != 'INBOX' else ''}"
+                            f"{' · ⚠ possibly misfiled in ' + m['folder'] + ': check it' if m.get('misfiled') else ' · in ' + m['folder'] if (m.get('folder') or 'INBOX').upper() != 'INBOX' else ''}"
                             f"{_note_fact(m)}", _summary(m, entry)],
                   "actions": []} for m in reversed(msgs[-80:])]
         if status == "ok":
@@ -1625,7 +1655,7 @@ def morning(entries: dict[str, dict[str, Any]], ctx: Any) -> dict[str, Any]:
         if status == "starting":
             lines.append(f"- **{company}**: first look still running.")
             continue
-        every = _all_messages(name, entry)
+        every, junk = reported(name, entry)
         day = [m for m in every if m["received"] >= (now - dt.timedelta(hours=DAY_HOURS)).isoformat()]
         counts = _counts(day)
         lines.append(f"- **{company}**: {counts}" + (" (24 h)" if day else ""))
@@ -1637,11 +1667,14 @@ def morning(entries: dict[str, dict[str, Any]], ctx: Any) -> dict[str, Any]:
         for m in need[:8]:
             verb = ACT_VERBS.get(kind(m)) or str(m.get("label") or "Email")
             flag = f"⚠ {verb} ({m['pressing']})" if m.get("pressing") else verb
-            where = f", in {m['folder']}" if (m.get("folder") or "INBOX").upper() != "INBOX" else ""
+            where = (f", ⚠ possibly misfiled in {m['folder']}: check it" if m.get("misfiled")
+                     else f", in {m['folder']}" if (m.get("folder") or "INBOX").upper() != "INBOX" else "")
             lines.append(f"    - {flag}: {_clean(_sender(m), 40)}, {_short_subject(m.get('subject'))} "
                          f"({_short_day(m['received'], now, tz)}{where})")
         if len(need) > 8:
             lines.append(f"    - …and {len(need) - 8} more on the dashboard (Add-ons > Email).")
+        if junk:
+            lines.append(f"    - {junk} junk in Spam: offered on the clean-up card, not listed")
         unverified = sum(1 for m in every if (m.get("note") or {}).get("verified") is False and m["received"] >= recent)
         if unverified:
             lines.append(f"    - ⚠ {unverified} email{'s that look' if unverified != 1 else ' that looks'} like you but aren't "

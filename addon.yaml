@@ -17,7 +17,7 @@ name: email
 kind: integration
 title: Email
 description: Reads your company inboxes, drafts replies and clean-ups; sends or moves to Trash only when you approve.
-version: 0.12.1
+version: 0.12.2
 you_need:
   - "A mailbox that offers IMAP and SMTP (Gmail / Google Workspace, Zoho, iCloud, Yahoo, Fastmail, your host's mail...)"
   - "An app password for it (not your normal password); Set up this mailbox says where your provider makes one"
@@ -32,7 +32,7 @@ entry_schema:
   imap_host: "str?"               # default imap.zoho.com (Zoho's Free plan); a paid plan uses imappro.zoho.com (see Zoho > Settings > Mail Accounts)
   imap_port: "port?"              # default 993 (TLS)
   folder: "str?"                  # default INBOX
-  folders: "str?"                 # other folders read the same way: "all" (default: every folder but Trash, Drafts, templates and Sent, new ones too) or names; Spam is shown, never drafted, carded or pushed; clean-up only in the inbox, Newsletter and Notification
+  folders: "str?"                 # other folders read the same way: "all" (default: every folder but Trash, Drafts, templates and Sent, new ones too) or names; junk in Spam is offered on the clean-up card, real-looking Spam shown as possibly misfiled; clean-up in the inbox, Spam, Newsletter and Notification
   alerts: "bool?"                 # false = pressing emails show on the page and in Today.md but never push (default true)
   personal: "bool?"               # a personal mailbox: sorted for a person (bills, appointments, deliveries, security notices, people you know), not a business (default: true when company is Personal)
   drafts: "bool?"                 # reply drafts on the Approvals page (default: on for a business mailbox, off for a personal one)
@@ -97,7 +97,7 @@ help:
     say: "The folder to read. Empty means INBOX."
   folders:
     label: Other folders to read
-    say: "Empty or all: every folder (Archive, Spam, your own, new ones as you make them) but Trash, Drafts and templates; Sent is read only to spot answered mail. Or the folders' names, separated by commas. Mail in Spam is listed but never answered, carded or pushed. Clean-up stays in the inbox and the Newsletter and Notification folders."
+    say: "Empty or all: every folder (Archive, Spam, your own, new ones as you make them) but Trash, Drafts and templates; Sent is read only to spot answered mail. Or the folders' names, separated by commas. Junk in Spam goes on the clean-up card (moved to Trash only when you approve); a Spam email that looks real shows as possibly misfiled. Clean-up covers the inbox, Spam and the Newsletter and Notification folders."
   alerts:
     label: Phone alerts
     say: "On: a pressing email (a client problem, a deadline within 48 hours, a payment or legal notice) is pushed to your phone. Off: it only shows on the page and in Today's note."
