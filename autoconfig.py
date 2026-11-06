@@ -32,7 +32,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
     "google": {
         "name": "Google (Gmail / Google Workspace)",
         "imap": ("imap.gmail.com", 993), "smtp": ("smtp.gmail.com", 465),
-        "sent_folder": "[Gmail]/Sent Mail", "trash_folder": "[Gmail]/Trash", "folders": "",
+        "sent_folder": "[Gmail]/Sent Mail", "trash_folder": "[Gmail]/Trash",
         "hosts": ("gmail.com", "googlemail.com"), "mx": ("google.com", "googlemail.com"),
         "app_password": "https://myaccount.google.com/apppasswords",
         "steps": "Google Account > Security > 2-Step Verification must be on; then App passwords, name it Hisho, "
@@ -41,7 +41,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
     "microsoft": {
         "name": "Microsoft (Outlook.com / Microsoft 365)",
         "imap": ("outlook.office365.com", 993), "smtp": ("smtp.office365.com", 587),
-        "sent_folder": "Sent Items", "trash_folder": "Deleted Items", "folders": "",
+        "sent_folder": "Sent Items", "trash_folder": "Deleted Items",
         "hosts": ("office365.com", "outlook.com", "hotmail.com", "live.com"),
         "mx": ("mail.protection.outlook.com", "olc.protection.outlook.com", "outlook.com", "hotmail.com"),
         "app_password": "https://account.microsoft.com/security",
@@ -62,7 +62,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
     "icloud": {
         "name": "iCloud Mail",
         "imap": ("imap.mail.me.com", 993), "smtp": ("smtp.mail.me.com", 587),
-        "sent_folder": "Sent Messages", "trash_folder": "Deleted Messages", "folders": "",
+        "sent_folder": "Sent Messages", "trash_folder": "Deleted Messages",
         "hosts": ("mail.me.com",), "mx": ("mail.icloud.com",),
         "app_password": "https://account.apple.com",
         "steps": "Apple Account > Sign-In and Security > App-Specific Passwords > +, name it Hisho",
@@ -70,7 +70,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
     "yahoo": {
         "name": "Yahoo Mail",
         "imap": ("imap.mail.yahoo.com", 993), "smtp": ("smtp.mail.yahoo.com", 465),
-        "sent_folder": "Sent", "trash_folder": "Trash", "folders": "",
+        "sent_folder": "Sent", "trash_folder": "Trash",
         "hosts": ("mail.yahoo.com",), "mx": ("yahoodns.net",),
         "app_password": "https://login.yahoo.com/account/security",
         "steps": "Yahoo Account Security > Generate app password (or Manage app passwords), name it Hisho",
@@ -78,7 +78,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
     "fastmail": {
         "name": "Fastmail",
         "imap": ("imap.fastmail.com", 993), "smtp": ("smtp.fastmail.com", 465),
-        "sent_folder": "Sent", "trash_folder": "Trash", "folders": "",
+        "sent_folder": "Sent", "trash_folder": "Trash",
         "hosts": ("fastmail.com", "messagingengine.com"), "mx": ("messagingengine.com", "fastmail.com"),
         "app_password": "https://app.fastmail.com/settings/security",
         "steps": "Settings > Privacy & Security > Manage app passwords and access > New app password, "
@@ -203,6 +203,47 @@ def _base_domain(host: str) -> str:
     parts = host.lower().rstrip(".").split(".")
     keep = 3 if len(parts) >= 3 and len(parts[-1]) == 2 and parts[-2] in ("com", "co", "net", "org") else 2
     return ".".join(parts[-keep:])
+
+
+#: the mail domains people type most: an address one letter away from one of these is almost surely a typo
+#: ("gmaill.com"), and setting it up would look up (and sign in to) servers at someone else's domain
+COMMON_DOMAINS = ("gmail.com", "googlemail.com", "yahoo.com", "ymail.com", "rocketmail.com", "outlook.com", "hotmail.com",
+                  "live.com", "msn.com", "icloud.com", "me.com", "mac.com", "aol.com", "zoho.com", "zohomail.com",
+                  "fastmail.com", "proton.me", "protonmail.com", "gmx.com", "gmx.net", "mail.com", "yandex.com",
+                  "comcast.net", "att.net", "sbcglobal.net", "verizon.net", "cox.net", "charter.net", "earthlink.net")
+
+
+def typo(address: str) -> str:
+    """The address with its domain corrected when the domain is one slip away from a common one (a letter doubled,
+    missing, extra, swapped or wrong, or the ending typed wrong), else ''. Exact common domains and anything not close
+    to one (a company's own domain) pass."""
+    local, _, domain = str(address or "").strip().rpartition("@")
+    domain = domain.lower().rstrip(".")
+    if not local or not domain or domain in COMMON_DOMAINS:
+        return ""
+    for right in COMMON_DOMAINS:
+        name, _, tld = right.partition(".")
+        d_name, _, d_tld = domain.partition(".")
+        # one slip only counts for a name of 4+ letters: "mi.com" is a real domain, not "me.com" mistyped
+        if ((len(name) >= 4 and _one_slip(domain, right)) or (d_name == name and d_tld in _TLD_SLIPS.get(tld, ()))):
+            return f"{local}@{right}"
+    return ""
+
+
+_TLD_SLIPS = {"com": ("con", "cmo", "co", "om", "cm", "comm", "ocm", "vom", "xom", "com.com"),
+              "net": ("ner", "nte", "ne", "nett", "met", "bet")}
+
+
+def _one_slip(a: str, b: str) -> bool:
+    """True when ``a`` is ``b`` with one letter added, dropped, changed, or two neighbours swapped."""
+    if a == b or abs(len(a) - len(b)) > 1:
+        return False
+    if len(a) == len(b):
+        diff = [i for i in range(len(a)) if a[i] != b[i]]
+        return len(diff) == 1 or (len(diff) == 2 and diff[1] == diff[0] + 1 and a[diff[0]] == b[diff[1]]
+                                  and a[diff[1]] == b[diff[0]])
+    short, long_ = (a, b) if len(a) < len(b) else (b, a)
+    return any(long_[:i] + long_[i + 1:] == short for i in range(len(long_)))
 
 
 def lookup(address: str, get: Callable[[str], str] | None = None,

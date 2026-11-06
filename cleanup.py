@@ -31,6 +31,16 @@ class CleanupViolation(RuntimeError):
     pass
 
 
+def mailbox(name: str) -> str:
+    """A folder name as IMAP wants it on the wire: imaplib sends it as given, so a name with a space
+    ("[Gmail]/Sent Mail", "Clients/Golden Coast") was a syntax error (Gmail: BAD Could not parse command, 2026-11-06).
+    Plain names go as they are; anything else as an RFC 3501 quoted string."""
+    name = str(name)
+    if re.fullmatch(r"[A-Za-z0-9_.\-/\[\]&+:]+", name):
+        return name
+    return '"' + name.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
 def check_cleanup_command(name: str, args: tuple[Any, ...], *, inbox: str, trash: str, uids: set[int]) -> None:
     """The IMAP clean-up may use, and only on the approved UIDs."""
     name = str(name).upper()
@@ -113,7 +123,7 @@ def trash(entry: dict[str, Any], password: str, p: dict[str, Any], *,
     conn.inbox, conn.trash, conn.uids = inbox, folder, frozenset(want)
     try:
         conn.login(str(entry["address"]), password)
-        typ, _ = conn.select(inbox)                   # read-write: a move needs it (nothing is marked read)
+        typ, _ = conn.select(mailbox(inbox))                   # read-write: a move needs it (nothing is marked read)
         if typ != "OK":
             return {"ok": False, "error": f"can't open {inbox}"}
         validity = str((conn.response("UIDVALIDITY")[1] or [b""])[0] or b"", "ascii", "replace")
@@ -135,10 +145,10 @@ def trash(entry: dict[str, Any], password: str, p: dict[str, Any], *,
         uidset = ",".join(str(u) for u in ok)
         caps = {c.upper() for c in (getattr(conn, "capabilities", ()) or ())}
         if "MOVE" in caps:
-            typ, data = conn.uid("MOVE", uidset, folder)
+            typ, data = conn.uid("MOVE", uidset, mailbox(folder))
             how = "MOVE"
         else:
-            typ, data = conn.uid("COPY", uidset, folder)
+            typ, data = conn.uid("COPY", uidset, mailbox(folder))
             if typ == "OK":
                 typ, data = conn.uid("STORE", uidset, "+FLAGS (\\Deleted)")
             if typ == "OK":

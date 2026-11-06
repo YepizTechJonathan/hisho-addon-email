@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.0
+
+- Folder names with a space (Gmail's "[Gmail]/Sent Mail", your own "Clients/Golden Coast") are sent quoted, as IMAP wants: a Gmail mailbox failed every read with "EXAMINE command error: BAD Could not parse command". Reading, filing a sent reply and clean-up's move to Trash all quote them.
+- Set up this mailbox catches a typo in the address before anything is looked up or sent ("gmaill.com", "gmial.com", "yaho.com", "gmail.con"...): "Did you mean ...@gmail.com?" with a button that fixes it and tries again (a mistyped domain can belong to someone else, who must never see the app password). Real domains near a common one ("mi.com") pass; one that really is right goes in by + add.
+- Personal mailboxes (`personal`, on by default for company Personal): sorted for a person, not a business (people you know, bills, appointments and deliveries, codes and notices, junk; no "customer request"), pressing only for something due within 48 hours, a payment problem, a sign-in you may not have made ("security notice") or a court or government notice. No reply drafts unless `drafts: true` (`drafts` also turns them off for a business mailbox).
+- Gmail, Microsoft, iCloud, Yahoo and Fastmail mailboxes set up through Set up this mailbox read every folder like the rest (the setup no longer pinned them to the inbox); Gmail's Important (a view, like All Mail and Starred) is skipped.
+
 ## 0.11.0
 
 - Every folder is read (`folders: all`, now the default): Archive, Spam, Snoozed, Zoho's smart filters and your own folders, found with LIST at each poll so a new folder is picked up by itself; never Trash, Drafts or templates (by their special-use flag or usual name), and Sent stays the answered-mail check, now read once per poll for every folder. Still EXAMINE / BODY.PEEK only. Naming folders still works.
