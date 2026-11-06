@@ -64,6 +64,8 @@ mailbox shows "waiting for app password": no error and no alert.
   - `folder` (str, optional)
   - `folders` (str, optional)
   - `alerts` (bool, optional)
+  - `personal` (bool, optional)
+  - `drafts` (bool, optional)
   - `request_form` (str, optional)
   - `sent_folder` (str, optional)
   - `smtp_host` (str, optional)

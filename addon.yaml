@@ -17,7 +17,7 @@ name: email
 kind: integration
 title: Email
 description: Reads your company inboxes, drafts replies and clean-ups; sends or moves to Trash only when you approve.
-version: 0.11.0
+version: 0.12.0
 you_need:
   - "A mailbox that offers IMAP and SMTP (Gmail / Google Workspace, Zoho, iCloud, Yahoo, Fastmail, your host's mail...)"
   - "An app password for it (not your normal password); Set up this mailbox says where your provider makes one"
@@ -34,6 +34,8 @@ entry_schema:
   folder: "str?"                  # default INBOX
   folders: "str?"                 # other folders read the same way: "all" (default: every folder but Trash, Drafts, templates and Sent, new ones too) or names; Spam is shown, never drafted, carded or pushed; clean-up only in the inbox, Newsletter and Notification
   alerts: "bool?"                 # false = pressing emails show on the page and in Today.md but never push (default true)
+  personal: "bool?"               # a personal mailbox: sorted for a person (bills, appointments, deliveries, security notices, people you know), not a business (default: true when company is Personal)
+  drafts: "bool?"                 # reply drafts on the Approvals page (default: on for a business mailbox, off for a personal one)
   request_form: "str?"            # a form to point customer requests at, named in their summary and drafts
   sent_folder: "str?"             # default Sent (read to spot answered mail; a sent reply's copy is filed here)
   smtp_host: "str?"               # default smtppro.zoho.com with an imappro mailbox, else smtp.zoho.com
@@ -60,6 +62,8 @@ entry_form:
   folder: "Folder (default INBOX)"
   folders: "Other folders to read (default all)"
   alerts: "Phone alerts for pressing emails (true/false)"
+  personal: "Personal mailbox (true/false)"
+  drafts: "Draft replies (true/false)"
   request_form: "Customer request form link"
   sent_folder: "Sent folder (default Sent)"
   smtp_host: "SMTP server (default smtppro.zoho.com / smtp.zoho.com)"
@@ -97,6 +101,12 @@ help:
   alerts:
     label: Phone alerts
     say: "On: a pressing email (a client problem, a deadline within 48 hours, a payment or legal notice) is pushed to your phone. Off: it only shows on the page and in Today's note."
+  personal:
+    label: Personal mailbox
+    say: "On: sorted as your own mail (bills, appointments, deliveries, sign-in and security notices, people you know) instead of a business's; pressing means due within 48 hours, a payment problem, a sign-in you may not have made, or a court or government notice. Empty means on when the company is Personal."
+  drafts:
+    label: Draft replies
+    say: "On: emails that need an answer get a drafted reply on the Approvals page (nothing is sent until you press Send). Empty means on for a business mailbox and off for a personal one."
   request_form:
     label: Request form link
     say: "Optional. The web address of a form customers can use for requests, like https://example.com/request. Drafted replies point to it."

@@ -57,7 +57,7 @@ def test_ispdb_first(conf):
     get = web({"https://autoconfig.thunderbird.net/v1.1/gmail.com": ISPDB_GMAIL})
     got = conf.lookup("alex@gmail.com", get=get, mx=lambda d: pytest.fail("no MX needed"))
     assert (got["imap_host"], got["imap_port"], got["smtp_host"], got["smtp_port"]) == ("imap.gmail.com", 993, "smtp.gmail.com", 465)
-    assert got["provider"] == "google" and got["sent_folder"] == "[Gmail]/Sent Mail" and got["folders"] == ""
+    assert got["provider"] == "google" and got["sent_folder"] == "[Gmail]/Sent Mail" and "folders" not in got
     assert got["app_password"] == "https://myaccount.google.com/apppasswords" and got["source"] == "Mozilla's ISPDB"
 
 
@@ -218,3 +218,28 @@ def test_a_mailbox_made_for_proton_warns_instead_of_failing_quietly(addon):
     assert not mod.was_proton({"address": "me@zoho.com", "imap_host": "imap.zoho.com", "imap_port": 993})
     assert mod.tls_context("127.0.0.1").verify_mode.name == "CERT_REQUIRED"      # no exception for Bridge any more
     assert mod.sender.tls_context("127.0.0.1").verify_mode.name == "CERT_REQUIRED"
+
+
+# ── 0.12.0: a typo in the address is caught before anything is looked up or sent ──
+
+@pytest.mark.parametrize("typed,meant", [("1001jona@gmaill.com", "1001jona@gmail.com"), ("a@gmial.com", "a@gmail.com"),
+                                         ("a@yaho.com", "a@yahoo.com"), ("a@gmail.con", "a@gmail.com"),
+                                         ("a@hotmial.com", "a@hotmail.com"), ("a@outlok.com", "a@outlook.com")])
+def test_a_typo_in_the_domain_is_offered_its_fix_and_nothing_is_looked_up(addon, core, conf, monkeypatch, typed, meant):
+    monkeypatch.setattr(conf, "fetch", lambda url: pytest.fail(f"looked up {url} for a typo'd domain"))
+    monkeypatch.setattr(conf, "mx_hosts", lambda d: pytest.fail("asked DNS for a typo'd domain"))
+    out = connect.connect(addon, "home", {"company": "Personal", "address": typed, "password": "s3cret-app-pass"})
+    assert not out["ok"] and out["suggest"] == {"address": meant}
+    assert out["explain"].startswith(f"Did you mean {meant}?") and "s3cret" not in json.dumps(out)
+
+
+@pytest.mark.parametrize("address", ["a@gmail.com", "a@mail.com", "a@mi.com", "info@patriotpointfederalservices.com",
+                                     "jonathan@yepiz.tech", "a@me.com"])
+def test_real_domains_are_not_typos(conf, address):
+    assert conf.typo(address) == ""
+
+
+def test_gmail_reads_every_folder_like_the_rest(conf):
+    got = conf.lookup("alex@gmail.com", get=web({"https://autoconfig.thunderbird.net/v1.1/gmail.com": ISPDB_GMAIL}),
+                      mx=lambda d: [])
+    assert "folders" not in got and got["sent_folder"] == "[Gmail]/Sent Mail"   # the default (all) applies

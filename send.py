@@ -41,6 +41,16 @@ class SendViolation(RuntimeError):
     pass
 
 
+def mailbox(name: str) -> str:
+    """A folder name as IMAP wants it on the wire: imaplib sends it as given, so a name with a space
+    ("[Gmail]/Sent Mail", "Clients/Golden Coast") was a syntax error (Gmail: BAD Could not parse command, 2026-11-06).
+    Plain names go as they are; anything else as an RFC 3501 quoted string."""
+    name = str(name)
+    if re.fullmatch(r"[A-Za-z0-9_.\-/\[\]&+:]+", name):
+        return name
+    return '"' + name.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
 def check_send_command(name: str, args: tuple[Any, ...], sent_folder: str) -> None:
     """The IMAP the send path may use: log in, open Sent read only, search it, append to it; nothing else."""
     name = str(name).upper()
@@ -275,13 +285,13 @@ def _copy_in_sent(entry: dict[str, Any], password: str, msg: email.message.Email
         conn.login(str(entry["address"]), password)
         mid = str(msg["Message-ID"])
         for i in range(SENT_LOOKS):
-            if conn.select(folder, readonly=True)[0] == "OK":
+            if conn.select(mailbox(folder), readonly=True)[0] == "OK":
                 typ, data = conn.uid("SEARCH", None, "HEADER", "Message-ID", mid)
                 if typ == "OK" and (data[0] or b"").split():
                     return "zoho"
             if i < SENT_LOOKS - 1:
                 sleep(3)
-        typ, _ = conn.append(folder, "(\\Seen)", imaplib.Time2Internaldate(time.time()), msg.as_bytes())
+        typ, _ = conn.append(mailbox(folder), "(\\Seen)", imaplib.Time2Internaldate(time.time()), msg.as_bytes())
         return "appended" if typ == "OK" else ""
     finally:
         try:

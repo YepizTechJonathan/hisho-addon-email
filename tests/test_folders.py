@@ -48,6 +48,7 @@ class Box:
 
     def select(self, folder="INBOX", readonly=False):
         self._cmd("EXAMINE" if readonly else "SELECT", folder)
+        folder = folder[1:-1] if folder.startswith('"') else folder   # a quoted name, as a server reads it
         self.cur = folder
         return "OK", [str(len(self.folders[folder])).encode()]
 
