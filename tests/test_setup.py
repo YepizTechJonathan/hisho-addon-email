@@ -233,8 +233,8 @@ def test_a_typo_in_the_domain_is_offered_its_fix_and_nothing_is_looked_up(addon,
     assert out["explain"].startswith(f"Did you mean {meant}?") and "s3cret" not in json.dumps(out)
 
 
-@pytest.mark.parametrize("address", ["a@gmail.com", "a@mail.com", "a@mi.com", "info@patriotpointfederalservices.com",
-                                     "jonathan@yepiz.tech", "a@me.com"])
+@pytest.mark.parametrize("address", ["a@gmail.com", "a@mail.com", "a@mi.com", "info@examplefederalservices.com",
+                                     "owner@example.tech", "a@me.com"])
 def test_real_domains_are_not_typos(conf, address):
     assert conf.typo(address) == ""
 

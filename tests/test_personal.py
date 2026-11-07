@@ -24,7 +24,7 @@ def mod(addon, monkeypatch, tmp_path):
 def test_personal_by_company_or_setting_and_drafts_follow(mod):
     assert mod.is_personal(GMAIL) and not mod.drafts_on(GMAIL)
     assert mod.drafts_on({**GMAIL, "drafts": True})
-    assert not mod.is_personal({"company": "YepizTech"}) and mod.drafts_on({"company": "YepizTech"})
+    assert not mod.is_personal({"company": "Acme Studio"}) and mod.drafts_on({"company": "Acme Studio"})
     assert mod.is_personal({"company": "Me", "personal": True})
 
 

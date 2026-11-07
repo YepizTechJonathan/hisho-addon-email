@@ -18,12 +18,12 @@ mod = None
 def mail(subject, sender, date, mid):
     m = EmailMessage()
     m["From"], m["To"], m["Subject"], m["Date"], m["Message-ID"] = sender, "alex@example.com", subject, date, mid
-    m.set_content("We'd like the Tripleseat lead form on our site, codes below.")
+    m.set_content("We'd like the BookingPro event form on our site, codes below.")
     return m.as_bytes()
 
 
-JESUS = mail("Fwd: Tripleseat Dynamic Lead Form Integration", "Jesus Juarez <jesus@goldencoast.com>",
-             "Fri, 23 Oct 2026 11:25:00 -0700", "<tripleseat@gc.com>")
+LEAD = mail("Fwd: BookingPro Event Form Setup", "Sam Rivera <sam@harborbakery.example>",
+             "Fri, 23 Oct 2026 11:25:00 -0700", "<bookingpro@hb.example>")
 NEWS = mail("Zoho's October update", "Zoho Team <news@zoho.com>", "Thu, 22 Oct 2026 08:00:00 -0700", "<news1@zoho.com>")
 
 
@@ -31,7 +31,7 @@ class Box:
     """INBOX, Newsletter, Notification and Sent; LIST answers like Zoho; every command is read-only-checked."""
 
     def __init__(self):
-        self.folders = {"INBOX": {}, "Newsletter": {4: JESUS, 5: NEWS}, "Notification": {}, "Sent": {}}
+        self.folders = {"INBOX": {}, "Newsletter": {4: LEAD, 5: NEWS}, "Notification": {}, "Sent": {}}
         self.cur, self.cmds = "INBOX", []
 
     def _cmd(self, name, *args):
@@ -83,8 +83,8 @@ def claude(prompt):
     if prompt.startswith("You sort the owner's business email"):
         out = []
         for n, subj in enumerate([l for l in prompt.splitlines() if l.startswith("Subject: ")], 1):
-            label = "Customer request" if "Tripleseat" in subj else "Newsletter"
-            out.append(json.dumps({"id": n, "label": label, "summary": "Wants the Tripleseat form on the site"
+            label = "Customer request" if "BookingPro" in subj else "Newsletter"
+            out.append(json.dumps({"id": n, "label": label, "summary": "Wants the BookingPro form on the site"
                                    if label == "Customer request" else "Zoho update"}))
         return "\n".join(out)
     if prompt.startswith("You draft a reply"):
@@ -124,14 +124,14 @@ def test_all_folders_are_read_read_only_with_one_login():
 def test_misfiled_real_mail_still_gets_its_label_draft_card_and_today_line():
     poll(Box())
     sub = mod.load_state("yt--newsletter")
-    jesus = next(m for m in sub["messages"] if "Tripleseat" in m["subject"])
-    assert jesus["label"] == "Customer request" and jesus["draft"]["subject"].startswith("Re: Fwd: Tripleseat")
+    lead = next(m for m in sub["messages"] if "BookingPro" in m["subject"])
+    assert lead["label"] == "Customer request" and lead["draft"]["subject"].startswith("Re: Fwd: BookingPro")
     cards = mod.proposals({"yt": YT}, Ctx())
     reply = next(c for c in cards if c["action"]["type"] == "email.send")
     assert reply["key"] == "reply:yt--newsletter:3:4" and reply["action"]["payload"]["mailbox"] == "yt"
-    assert reply["action"]["payload"]["in_reply_to"] == "<tripleseat@gc.com>"
+    assert reply["action"]["payload"]["in_reply_to"] == "<bookingpro@hb.example>"
     lines = mod.morning({"yt": YT}, Ctx())["lines"]
-    assert any("Tripleseat" in l and "in Newsletter" in l for l in lines)
+    assert any("BookingPro" in l and "in Newsletter" in l for l in lines)
     sec = mod.details({"yt": YT}, Ctx())[0]
     fact = next(f for f in sec["facts"] if f.startswith("Folders read:"))
     assert fact.startswith("Folders read: INBOX, Newsletter, Notification; every folder but Trash, Drafts and Sent")
@@ -198,15 +198,15 @@ ZOHO_LIST = [b'(\\HasNoChildren) "/" "INBOX"', b'(\\Noinferiors \\Drafts) "/" "D
              b'(\\HasNoChildren) "/" "Snoozed"', b'(\\Noinferiors \\Sent) "/" "Sent"', b'(\\Noinferiors \\Junk) "/" "Spam"',
              b'(\\HasNoChildren \\Trash) "/" "Trash"', b'(\\HasNoChildren) "/" "Notification"',
              b'(\\HasNoChildren) "/" "Newsletter"', b'(\\HasNoChildren) "/" "Archive"', b'(\\HasNoChildren) "/" "Payments"',
-             b'(\\HasNoChildren) "/" "Clients/Golden Coast"']
-REAL = mail("Can you fix the contact form?", "Maria Lopez <maria@goldencoast.com>", "Thu, 22 Oct 2026 09:00:00 -0700",
+             b'(\\HasNoChildren) "/" "Clients/Harbor Bakery"']
+REAL = mail("Can you fix the contact form?", "Alex Kim <alex@harborbakery.example>", "Thu, 22 Oct 2026 09:00:00 -0700",
             "<maria1@gc.com>")
 
 
 def zoho_box():
     box = Box()
     box.folders.update({name: {} for name in ("Drafts", "Templates", "Snoozed", "Spam", "Trash", "Archive", "Payments",
-                                              "Clients/Golden Coast")})
+                                              "Clients/Harbor Bakery")})
     box.list = lambda: (box._cmd("LIST"), ("OK", list(ZOHO_LIST)))[1]
     return box
 
@@ -217,7 +217,7 @@ def labeller(calls):
             calls.append(prompt)
             out = []
             for n, subj in enumerate([l for l in prompt.splitlines() if l.startswith("Subject: ")], 1):
-                real = "contact form" in subj or "Tripleseat" in subj
+                real = "contact form" in subj or "BookingPro" in subj
                 out.append(json.dumps({"id": n, "label": "Customer request" if real else "Newsletter",
                                        "summary": "Wants the contact form fixed" if real else "update",
                                        **({"pressing": "client problem"} if "contact form" in subj else {})}))
@@ -230,7 +230,7 @@ def test_all_folders_by_default_but_trash_drafts_templates_and_sent():
     box = zoho_box()
     st = poll(box)
     assert st["folders_found"] == ["Snoozed", "Spam", "Notification", "Newsletter", "Archive", "Payments",
-                                   "Clients/Golden Coast"]
+                                   "Clients/Harbor Bakery"]
     assert st["folders_junk"] == ["Spam"]
     examined = [c[1] for c in box.cmds if c[0] == "EXAMINE"]
     assert not {"Drafts", "Templates", "Trash"} & set(examined)
@@ -270,7 +270,7 @@ def test_mail_moved_to_archive_is_recognised_not_labelled_drafted_carded_or_push
     first = mod.load_state("yt")["messages"][0]
     assert first["label"] == "Customer request" and first["draft"]
     cards = [c for c in mod.proposals({"yt": YT}, Ctx()) if c["action"]["type"] == "email.send"]
-    # he files it in Archive: a new UID there, gone from the inbox
+    # the owner files it in Archive: a new UID there, gone from the inbox
     box.folders["INBOX"], box.folders["Archive"] = {}, {3: REAL}
     calls.clear()
     poll(box, now=later, ask=labeller(calls))
@@ -287,20 +287,20 @@ def test_mail_moved_to_archive_is_recognised_not_labelled_drafted_carded_or_push
 
 def test_clean_up_scope_is_the_inbox_the_filters_and_spam(monkeypatch):
     box = zoho_box()
-    for f in ("Archive", "Spam", "Clients/Golden Coast", "Snoozed"):
+    for f in ("Archive", "Spam", "Clients/Harbor Bakery", "Snoozed"):
         box.folders[f] = {21: NEWS}
     poll(box)
     searched = {c[1] for c in box.cmds if c[0] == "UID" and c[1] == "SEARCH" and c[2:4] == (None, "ALL")}
     folders = [c[1] for c in box.cmds if c[0] == "EXAMINE"]
     assert searched   # the scan ran (inbox, Newsletter, Notification)...
-    for f in ("Archive", "Clients/Golden Coast", "Snoozed", "Payments"):
+    for f in ("Archive", "Clients/Harbor Bakery", "Snoozed", "Payments"):
         assert not (mod.load_state(mod.stream_name("yt", f)).get("cleanup") or {}).get("cats"), f   # ...but not here
     assert (mod.load_state("yt--spam").get("cleanup") or {}).get("cats")   # Spam is scanned (0.12.2)
     trash = {c["action"]["payload"]["folder"] for c in mod.proposals({"yt": YT}, Ctx())
              if c["action"]["type"] == "email.trash"}
     assert trash <= {"INBOX", "Newsletter", "Notification", "Spam"} and "Spam" in trash
     monkeypatch.setattr(mod.cleaner, "trash", lambda *a, **k: pytest.fail("never moved"))
-    for f in ("Archive", "Clients/Golden Coast", "Payments"):
+    for f in ("Archive", "Clients/Harbor Bakery", "Payments"):
         forged = {"mailbox": "yt", "folder": f, "uidvalidity": "3",
                   "items": [{"uid": 21, "message_id": "<news1@zoho.com>", "from_addr": "news@zoho.com",
                              "group": "Newsletters"}]}

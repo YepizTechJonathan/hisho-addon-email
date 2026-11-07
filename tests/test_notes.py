@@ -1,4 +1,4 @@
-"""0.5.0: notes to Hisho. Mail from his own addresses is never drafted; when Zoho verified it really came from him,
+"""0.5.0: notes to Hisho. Mail from the owner's own addresses is never drafted; when Zoho verified it really came from them,
 Claude turns it into Approvals cards from a fixed list of actions; unverified look-alikes only get a warning.
 Run with Hisho's venv at the repository's top: ~/code/hisho/.venv/bin/python -m pytest -q"""
 import datetime as dt
@@ -44,7 +44,7 @@ def _mod(addon, monkeypatch, tmp_path):
     monkeypatch.setattr(mod, "_tz", lambda: dt.timezone(dt.timedelta(hours=-7), "PDT"))
 
 
-# ── is it really him? ─────────────────────────────────────────────────────
+# ── is it really the owner? ─────────────────────────────────────────────────────
 
 def test_only_zohos_topmost_header_for_the_senders_own_domain_counts():
     assert mod.verify_sender(parsed(note("a", "x")), "alex@rivera.work")["auth_ok"] is True

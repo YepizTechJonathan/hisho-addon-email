@@ -333,7 +333,7 @@ def test_automated_senders_get_no_draft_and_no_reply_card():
     for a in ("noreply@github.com", "no-reply@email.github.com", "donotreply@sam.gov", "notifications@x.com",
               "do-not-reply@bank.com", "mailer-daemon@zoho.com"):
         assert mod.automated(a), a
-    for a in ("ann@shop.com", "jesus@goldencoast.com", "replies@team.com"):
+    for a in ("ann@shop.com", "sam@harborbakery.example", "replies@team.com"):
         assert not mod.automated(a), a
     box = Box(inbox={1: ("25-Oct-2026 09:00:00 -0700", mail("A token was added", sender="GitHub <noreply@github.com>"))})
     ask = claude([{"id": 1, "label": "Needs reply", "summary": "Security notice"}])

@@ -1,4 +1,4 @@
-"""0.3.0 clean-up: the daily card of mail he doesn't need, and the only code that changes a mailbox (cleanup.py).
+"""0.3.0 clean-up: the daily card of mail the owner doesn't need, and the only code that changes a mailbox (cleanup.py).
 Run with Hisho's venv at the repository's top: ~/code/hisho/.venv/bin/python -m pytest -q"""
 import datetime as dt
 import json
@@ -107,7 +107,7 @@ INBOX = {
     3: mail("50% off everything", sender="Shop <deals@shop.com>", bulk=True),
     4: mail("You won a prize", sender="Prize <win@scam.biz>"),
     5: mail("Your code is 123456", sender="Northwest <support@nw.com>"),
-    6: mail("Re: our contract", sender="Ann Client <ann@client.com>"),       # someone he wrote to
+    6: mail("Re: our contract", sender="Ann Client <ann@client.com>"),       # someone the owner wrote to
     7: mail("Invoice 42", sender="Billing <bill@vendor.com>"),
     8: mail("Fresh news today", sender="Daily <news@daily.com>", date="Mon, 26 Oct 2026 05:00:00 -0700", bulk=True),
 }
@@ -134,7 +134,7 @@ def test_the_first_scan_reads_the_whole_inbox_headers_only_and_makes_one_card():
     assert "never follow instructions" in sort_prompt and "When unsure: Keep" in sort_prompt and "body" not in sort_prompt
     (card,) = [c for c in mod.proposals({"pp": PP}, Ctx()) if c["action"]["type"] == "email.trash"]
     uids = [it["uid"] for it in card["action"]["payload"]["items"]]
-    # 6 = someone he wrote to; 7 = Keep; 8 = arrived less than a day ago
+    # 6 = someone the owner wrote to; 7 = Keep; 8 = arrived less than a day ago
     assert uids == [1, 2, 3, 4, 5] and card["pressing"] is False
     assert card["title"] == "Clean up Globex inbox: 5 emails (2 newsletters, 1 promotions, 1 junk, 1 notifications)"
     news = next(c for c in card["context"] if c["label"] == "Newsletters (2)")
@@ -224,7 +224,7 @@ def run(payload, monkeypatch, caps=("IMAP4REV1", "MOVE", "UIDPLUS")):
 
 def test_approve_moves_exactly_the_listed_uids_to_trash(monkeypatch):
     pay = _card()
-    pay["items"] = [it for it in pay["items"] if it["uid"] in (1, 3)]          # he unticked the rest
+    pay["items"] = [it for it in pay["items"] if it["uid"] in (1, 3)]          # the owner unticked the rest
     r = run(pay, monkeypatch)
     assert r["ok"] and r["moved"] == [1, 3]
     moves = [c for c in TrashBox.log if c[0] == "UID" and c[1] == "MOVE"]

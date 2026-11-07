@@ -462,8 +462,8 @@ def test_morning_lists_only_what_he_must_act_on_one_short_line_each(monkeypatch)
                                               sender="support@northwestregisteredagent.com")),
         3: ("23-Oct-2026 10:05:00 -0700", raw("Your $99.71 payout is on the way", "x", sender="Stripe <s@stripe.com>")),
         4: ("23-Oct-2026 10:10:00 -0700", raw("Invoice 42 due Nov 1", "x", sender="Acme Billing <b@acme.com>")),
-        5: ("23-Oct-2026 10:20:00 -0700", raw("Fwd: Tripleseat Dynamic Lead Form Integration for the website",
-                                              "x", sender="Jesus Juarez <j@gc.com>")),
+        5: ("23-Oct-2026 10:20:00 -0700", raw("Fwd: BookingPro Event Form Setup for the website",
+                                              "x", sender="Sam Rivera <s@hb.example>")),
     })
     run(fake, labeller([{"id": 1, "label": "Needs reply", "summary": "Northwest verification code 727412"},
                         {"id": 2, "label": "Bill or invoice", "summary": "Stripe payout receipt, arriving Oct 26."},
@@ -472,7 +472,7 @@ def test_morning_lists_only_what_he_must_act_on_one_short_line_each(monkeypatch)
     monkeypatch.setattr(mod, "_now", lambda: NOW)
     lines = mod.morning({"yt": ENTRY}, Ctx())["lines"]
     assert lines == ["- **Acme**: 1 customer request · 1 bill to pay · 1 receipt · 1 notice (24 h)",
-                     "    - Customer: Jesus Juarez, Tripleseat Dynamic Lead Form Integration for the website (today)",
+                     "    - Customer: Sam Rivera, BookingPro Event Form Setup for the website (today)",
                      "    - Pay: Acme Billing, Invoice 42 due Nov 1 (today)"]
     assert all(len(line) <= 130 for line in lines)
 

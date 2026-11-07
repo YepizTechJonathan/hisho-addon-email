@@ -1,8 +1,14 @@
 # Changelog
 
+## 0.12.3
+
+- No personal names, addresses or companies anywhere in the add-on: tests, examples and notes use made-up ones
+  (Harbor Bakery, Sam Rivera, owner@example.tech), and the owner is "the owner" or "they" throughout, prompts
+  included. Nothing else changed.
+
 ## 0.12.2
 
-- Spam goes, it doesn't sit there (Jonathan): junk in each mailbox's Spam folder is offered on the daily clean-up card like the inbox's (same age rule, moved to Trash only when you approve, never a permanent delete). Plain junk from Spam is no longer listed on the page or in Today.md, only counted ("3 junk in Spam: offered on the clean-up card"); a Spam email that looks real (it needs you, it's from someone you've written to, or it answers your mail) is listed as "possibly misfiled: check it" and never offered for clean-up.
+- Spam goes, it doesn't sit there: junk in each mailbox's Spam folder is offered on the daily clean-up card like the inbox's (same age rule, moved to Trash only when you approve, never a permanent delete). Plain junk from Spam is no longer listed on the page or in Today.md, only counted ("3 junk in Spam: offered on the clean-up card"); a Spam email that looks real (it needs you, it's from someone you've written to, or it answers your mail) is listed as "possibly misfiled: check it" and never offered for clean-up.
 
 ## 0.12.1
 
@@ -10,7 +16,7 @@
 
 ## 0.12.0
 
-- Folder names with a space (Gmail's "[Gmail]/Sent Mail", your own "Clients/Golden Coast") are sent quoted, as IMAP wants: a Gmail mailbox failed every read with "EXAMINE command error: BAD Could not parse command". Reading, filing a sent reply and clean-up's move to Trash all quote them.
+- Folder names with a space (Gmail's "[Gmail]/Sent Mail", your own "Clients/Harbor Bakery") are sent quoted, as IMAP wants: a Gmail mailbox failed every read with "EXAMINE command error: BAD Could not parse command". Reading, filing a sent reply and clean-up's move to Trash all quote them.
 - Set up this mailbox catches a typo in the address before anything is looked up or sent ("gmaill.com", "gmial.com", "yaho.com", "gmail.con"...): "Did you mean ...@gmail.com?" with a button that fixes it and tries again (a mistyped domain can belong to someone else, who must never see the app password). Real domains near a common one ("mi.com") pass; one that really is right goes in by + add.
 - Personal mailboxes (`personal`, on by default for company Personal): sorted for a person, not a business (people you know, bills, appointments and deliveries, codes and notices, junk; no "customer request"), pressing only for something due within 48 hours, a payment problem, a sign-in you may not have made ("security notice") or a court or government notice. No reply drafts unless `drafts: true` (`drafts` also turns them off for a business mailbox).
 - Gmail, Microsoft, iCloud, Yahoo and Fastmail mailboxes set up through Set up this mailbox read every folder like the rest (the setup no longer pinned them to the inbox); Gmail's Important (a view, like All Mail and Starred) is skipped.
@@ -83,9 +89,9 @@
 ## 0.7.0
 
 - Today.md's Email section is short and honest: one line per mailbox, "**Acme**: 1 to reply · 3 receipts ·
-  6 newsletters (24 h)", then one line per email he must act on ("Reply: Jesus Juarez, Tripleseat Dynamic Lead Form
+  6 newsletters (24 h)", then one line per email you must act on ("Reply: Sam Rivera, BookingPro Dynamic Lead Form
   Integration (Fri)"), from the last 3 days. Receipts, payouts and bills that need nothing are counted, not listed;
-  verification codes and other automated mail count as notices, never "to reply". Unverified look-alikes of his
+  verification codes and other automated mail count as notices, never "to reply". Unverified look-alikes of the owner's
   own address are one line with a count; clean-up is one line ("Cleanup: 217 moved to Trash, 140 waiting on
   Approvals"). A quiet mailbox says "nothing new". The dashboard keeps the full summaries.
 - The labelling prompt says automated mail is never Needs reply, and a receipt's summary ends "no action needed".

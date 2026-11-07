@@ -43,7 +43,7 @@ class SendViolation(RuntimeError):
 
 def mailbox(name: str) -> str:
     """A folder name as IMAP wants it on the wire: imaplib sends it as given, so a name with a space
-    ("[Gmail]/Sent Mail", "Clients/Golden Coast") was a syntax error (Gmail: BAD Could not parse command, 2026-11-06).
+    ("[Gmail]/Sent Mail", "Clients/Harbor Bakery") was a syntax error (Gmail: BAD Could not parse command, 2026-11-06).
     Plain names go as they are; anything else as an RFC 3501 quoted string."""
     name = str(name)
     if re.fullmatch(r"[A-Za-z0-9_.\-/\[\]&+:]+", name):
@@ -247,7 +247,7 @@ def build(entry: dict[str, Any], p: dict[str, Any]) -> email.message.EmailMessag
     msg.set_content(p["body"])
     as_html = html_version(entry, p["body"])
     if as_html:
-        msg.add_alternative(as_html, subtype="html")   # the same text, with his HTML sign-off
+        msg.add_alternative(as_html, subtype="html")   # the same text, with the owner's HTML sign-off
     return msg
 
 

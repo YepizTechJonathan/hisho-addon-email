@@ -1,4 +1,4 @@
-"""0.6.0: an HTML sign-off (his Zoho signature) in the HTML part of sent mail, with a plain-text twin.
+"""0.6.0: an HTML sign-off (the owner's Zoho signature) in the HTML part of sent mail, with a plain-text twin.
 Run with Hisho's venv at the repository's top: ~/code/hisho/.venv/bin/python -m pytest -q"""
 import email
 import email.policy
@@ -68,7 +68,7 @@ def test_mail_goes_as_text_plus_html_with_the_html_sign_off(entry, monkeypatch):
     assert parsed.get_content_type() == "multipart/alternative"
     assert parsed.get_body(("plain",)).get_content().replace("\r\n", "\n").strip() == body
     h = parsed.get_body(("html",)).get_content()
-    assert "Yes &lt;b&gt;I&lt;/b&gt; can help &amp; will." in h          # his words are text, never markup
+    assert "Yes &lt;b&gt;I&lt;/b&gt; can help &amp; will." in h          # their words are text, never markup
     assert "Owner / Technology Consultant" not in h and "example.com</a>" in h   # the HTML sign-off replaces the plain one
 
 

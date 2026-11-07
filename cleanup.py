@@ -33,7 +33,7 @@ class CleanupViolation(RuntimeError):
 
 def mailbox(name: str) -> str:
     """A folder name as IMAP wants it on the wire: imaplib sends it as given, so a name with a space
-    ("[Gmail]/Sent Mail", "Clients/Golden Coast") was a syntax error (Gmail: BAD Could not parse command, 2026-11-06).
+    ("[Gmail]/Sent Mail", "Clients/Harbor Bakery") was a syntax error (Gmail: BAD Could not parse command, 2026-11-06).
     Plain names go as they are; anything else as an RFC 3501 quoted string."""
     name = str(name)
     if re.fullmatch(r"[A-Za-z0-9_.\-/\[\]&+:]+", name):
