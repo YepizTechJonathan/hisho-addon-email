@@ -43,6 +43,10 @@ Reads your company inboxes, tells you what needs you, and drafts replies; **noth
 - **Today.md** gets an Email section: per company, the last 24 hours by label and the unanswered emails of the last
   3 days that need you. Your phone hears only about what is **pressing** (a client problem, a deadline within 48
   hours, a payment or legal notice); `alerts: false` keeps a mailbox to the page and Today.md.
+- **Personal mailboxes** (`personal`, on for company Personal) are sorted for a person, with no reply drafts unless
+  `drafts: true`, and put a **job search** first: recruiters, interview requests, application updates and job alerts
+  lead Today.md and the page, are never cleaned up, a likely job scam is flagged, and only someone waiting on your
+  reply pushes to the phone.
 - Messages stay on the Core machine (`~/.local/state/hisho/addons/email/`), never in the vault.
 
 Each mailbox needs an **app password** (a separate password your provider makes for one app; with two-step sign-in

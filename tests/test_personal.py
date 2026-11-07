@@ -109,3 +109,92 @@ def test_the_setup_test_opens_the_sent_folder_too(mod, monkeypatch):
     monkeypatch.setattr(mod.sender, "smtp_login_test", lambda e, p: pytest.fail("SMTP before the folders were fine"))
     out = mod.test({**GMAIL, "sent_folder": "Sent Stuff"}, type("C", (), {"secret": lambda s, n: "pw"})())
     assert not out["ok"] and "Sent folder 'Sent Stuff'" in out["error"] and "[Gmail]/Sent Mail" in out["explain"]
+
+
+# ── 0.12.4: the job hunt (personal mailboxes): first everywhere, never cleaned up, a push only when someone waits ──
+
+def jobs_state(mod, now=NOW):
+    t = (now - dt.timedelta(hours=3)).isoformat()
+    msgs = [
+        {"uid": 1, "from_name": "Pat Recruiter", "from_addr": "pat@acme-staffing.example", "subject": "Interview Tuesday?",
+         "label": "Job search", "summary": "Asks to confirm an interview time", "pressing": "job reply", "received": t},
+        {"uid": 2, "from_name": "Hiring Desk", "from_addr": "hr@bigpay-jobs.example", "subject": "You're hired! Send your bank info",
+         "label": "Job search", "summary": "Offer that asks for bank details", "pressing": "", "scam": True, "received": t},
+        {"uid": 3, "from_name": "JobBoard Alerts", "from_addr": "alerts@jobboard.example", "subject": "5 new IT jobs",
+         "label": "Job search", "summary": "Job alert", "pressing": "", "received": t},
+        {"uid": 4, "from_name": "JobBoard Alerts", "from_addr": "alerts@jobboard.example", "subject": "3 new IT jobs",
+         "label": "Job search", "summary": "Job alert", "pressing": "", "received": t},
+        {"uid": 5, "from_name": "Shop", "from_addr": "deals@shop.example", "subject": "Sale", "label": "Newsletter",
+         "summary": "sale", "pressing": "", "received": t},
+        {"uid": 6, "from_name": "Sam Friend", "from_addr": "sam@example.com", "subject": "Dinner?", "label": "Needs reply",
+         "summary": "Dinner plans", "pressing": "", "received": t}]
+    mod.save_state("home", {"status": "ok", "checked": now.isoformat(), "uidvalidity": "1", "messages": msgs})
+
+
+def test_job_mail_is_sorted_first_with_its_own_push_and_a_scam_flag(mod):
+    def ask(prompt):
+        assert "job" in prompt.lower() and "scam" in prompt and "job reply" in prompt
+        return "\n".join([json.dumps({"id": 1, "label": "Job search", "summary": "interview", "pressing": "job reply"}),
+                          json.dumps({"id": 2, "label": "Job search", "summary": "fee first", "pressing": "job reply",
+                                      "scam": True}),
+                          json.dumps({"id": 3, "label": "Newsletter", "summary": "x", "pressing": "job reply"})])
+    msgs = [{"uid": u, "from_addr": "x@y.com", "subject": "s", "body": "b", "received": "r"} for u in (1, 2, 3)]
+    got = mod.classify("Personal", msgs, NOW, ask, personal=True)
+    assert got[1] == {"label": "Job search", "summary": "interview", "pressing": "job reply"}
+    assert got[2]["scam"] is True and got[2]["pressing"] == ""   # a likely scam is never pushed
+    assert got[3]["pressing"] == ""
+
+
+def test_today_lists_the_job_hunt_first(mod):
+    jobs_state(mod)
+    lines = mod.morning({"home": {**GMAIL}}, None)["lines"]
+    assert lines[0] == "- **Job search**"
+    assert lines[1].startswith("    - **waiting on your reply**: Pat Recruiter, Interview Tuesday?")
+    assert lines[2].startswith("    - ⚠ looks like a scam: don't send money or ID: Hiring Desk")
+    assert lines[3] == "    - 2 job alerts: JobBoard Alerts 2 (Add-ons > Email)"
+    assert lines[4].startswith("- **Personal**")
+    assert not any("Interview Tuesday" in l for l in lines[4:])   # once, in the job block
+    assert any("Reply: Sam Friend" in l for l in lines[4:])
+
+
+def test_a_push_only_when_someone_waits_on_a_reply(mod):
+    jobs_state(mod)
+    probs = mod.summary({"home": {**GMAIL}}, type("C", (), {"secret": lambda s, n: "pw"})())["problems"]
+    assert [p["title"] for p in probs] == ["Personal: job reply from Pat Recruiter"]
+
+
+def test_job_mail_is_never_cleaned_and_comes_first_on_the_page(mod):
+    jobs_state(mod)
+    clean = {"cats": {"3": {"group": "Jobs", "from_addr": "alerts@jobboard.example"}}}
+    assert mod.never_clean({"group": "Newsletters", "from_addr": "alerts@jobboard.example"},
+                           {"label": "Job search"}, clean) == "Job search"
+    assert mod.never_clean(clean["cats"]["3"], None, clean) == "not clutter"   # the header sort's Jobs group stays
+    items = mod.details({"home": {**GMAIL}}, None)[0]["items"]
+    names = [i["name"] for i in items if i["id"] not in ("new", "cleanup")]
+    assert names[:2] == ["Interview Tuesday?", "You're hired! Send your bank info"] or \
+        set(names[:2]) == {"Interview Tuesday?", "You're hired! Send your bank info"}
+    scam = next(i for i in items if i["name"].startswith("You're hired"))
+    assert "looks like a scam" in scam["facts"][0] and scam["facts"][0].startswith("💼 Job search")
+
+
+def test_job_mail_sorted_before_this_version_is_sorted_again_once(mod):
+    t = (NOW - dt.timedelta(hours=5)).isoformat()
+    mod.save_state("home", {"status": "ok", "uidvalidity": "1", "last_uid": 10, "messages": [
+        {"uid": 7, "from_name": "JobBoard", "from_addr": "alerts@linkedin.com", "subject": "New jobs for you",
+         "label": "Newsletter", "summary": "x", "pressing": "", "received": t, "tries": 1},
+        {"uid": 8, "from_name": "Shop", "from_addr": "deals@shop.example", "subject": "Sale", "label": "Newsletter",
+         "summary": "x", "pressing": "", "received": t, "tries": 1}]})
+    asked = []
+
+    def ask(prompt):
+        asked.append(prompt)
+        return json.dumps({"id": 1, "label": "Job search", "summary": "job alert", "pressing": ""})
+    box = GmailBox()
+    mod.poll("home", {**GMAIL, "folders": ""}, type("C", (), {"secret": lambda s, n: "pw"})(), now=NOW, ask=ask,
+             connect_fn=lambda e, p: box)
+    msgs = {m["uid"]: m for m in mod.load_state("home")["messages"]}
+    assert msgs[7]["label"] == "Job search" and msgs[8]["label"] == "Newsletter"
+    assert len(asked) == 1 and "New jobs for you" in asked[0] and "Sale" not in asked[0]
+    mod.poll("home", {**GMAIL, "folders": ""}, type("C", (), {"secret": lambda s, n: "pw"})(),
+             now=NOW + dt.timedelta(minutes=5), ask=ask, connect_fn=lambda e, p: box)
+    assert len(asked) == 1   # once

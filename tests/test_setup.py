@@ -222,7 +222,7 @@ def test_a_mailbox_made_for_proton_warns_instead_of_failing_quietly(addon):
 
 # ── 0.12.0: a typo in the address is caught before anything is looked up or sent ──
 
-@pytest.mark.parametrize("typed,meant", [("1001jona@gmaill.com", "1001jona@gmail.com"), ("a@gmial.com", "a@gmail.com"),
+@pytest.mark.parametrize("typed,meant", [("sam.rivera@gmaill.com", "sam.rivera@gmail.com"), ("a@gmial.com", "a@gmail.com"),
                                          ("a@yaho.com", "a@yahoo.com"), ("a@gmail.con", "a@gmail.com"),
                                          ("a@hotmial.com", "a@hotmail.com"), ("a@outlok.com", "a@outlook.com")])
 def test_a_typo_in_the_domain_is_offered_its_fix_and_nothing_is_looked_up(addon, core, conf, monkeypatch, typed, meant):

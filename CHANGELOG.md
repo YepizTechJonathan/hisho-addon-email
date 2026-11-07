@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.12.4
+
+- Job search, for personal mailboxes: recruiters, employers, interview requests, application updates and job boards' alerts get their own label. They lead Today's Email section (a "Job search" block: people first, the ones waiting on your reply marked, alerts counted by sender) and the mailbox's page, and are never offered for clean-up (the header sort has a Jobs group that stays). A push comes only when a recruiter or employer waits on your answer ("job reply"). Mail that looks like a job scam (a fee, gift cards, bank or ID details up front, a domain that doesn't match the company) is flagged and never pushed. Mail sorted before this version that looks job-related is sorted again once.
+
 ## 0.12.3
 
 - No personal names, addresses or companies anywhere in the add-on: tests, examples and notes use made-up ones

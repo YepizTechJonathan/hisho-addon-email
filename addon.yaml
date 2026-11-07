@@ -17,7 +17,7 @@ name: email
 kind: integration
 title: Email
 description: Reads your company inboxes, drafts replies and clean-ups; sends or moves to Trash only when you approve.
-version: 0.12.3
+version: 0.12.4
 you_need:
   - "A mailbox that offers IMAP and SMTP (Gmail / Google Workspace, Zoho, iCloud, Yahoo, Fastmail, your host's mail...)"
   - "An app password for it (not your normal password); Set up this mailbox says where your provider makes one"
@@ -103,7 +103,7 @@ help:
     say: "On: a pressing email (a client problem, a deadline within 48 hours, a payment or legal notice) is pushed to your phone. Off: it only shows on the page and in Today's note."
   personal:
     label: Personal mailbox
-    say: "On: sorted as your own mail (bills, appointments, deliveries, sign-in and security notices, people you know) instead of a business's; pressing means due within 48 hours, a payment problem, a sign-in you may not have made, or a court or government notice. Empty means on when the company is Personal."
+    say: "On: sorted as your own mail (bills, appointments, deliveries, sign-in and security notices, people you know) instead of a business's; pressing means due within 48 hours, a payment problem, a sign-in you may not have made, or a court or government notice. Empty means on when the company is Personal. Job search comes first: recruiters, applications, interviews and job alerts lead Today's note and the page, are never cleaned up, a likely job scam is flagged, and a push comes only when someone waits on your reply."
   drafts:
     label: Draft replies
     say: "On: emails that need an answer get a drafted reply on the Approvals page (nothing is sent until you press Send). Empty means on for a business mailbox and off for a personal one."
