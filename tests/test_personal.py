@@ -3,6 +3,7 @@ reply drafts unless drafts: true. Folder names with spaces (Gmail's "[Gmail]/Sen
 Run with Hisho's venv at the repository's top: ~/code/hisho/.venv/bin/python -m pytest -q"""
 import datetime as dt
 import json
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -253,3 +254,48 @@ def test_job_boards_and_hidden_noreply_addresses_are_alerts_not_people(mod):
         assert mod.kind({"label": "Job search", "from_addr": addr}) == "jobalert", addr
     assert mod.kind({"label": "Job search", "from_addr": "pat.lee@staffing.example"}) == "job"
     assert mod.kind({"label": "Job search", "from_addr": "alerts@linkedin.com", "pressing": "job reply"}) == "job"
+
+
+# ── 0.12.6: events an email names become "Add to your calendar" cards (Hisho's own calendar, on Approve only) ──
+
+def test_an_event_the_sort_names_is_checked_strictly(mod):
+    ok = mod.parse_event({"title": "Interview with Acme", "start": "2026-11-12T10:00", "end": "2026-11-12T11:00",
+                          "place": "Zoom https://zoom.us/j/123"})
+    assert ok == {"title": "Interview with Acme", "start": "2026-11-12T10:00", "end": "2026-11-12T11:00", "place": "Zoom"}
+    for bad in ({"title": "", "start": "2026-11-12T10:00"}, {"title": "x", "start": "next Tuesday"},
+                {"title": "x", "start": "2026-11-12T10:00", "end": "2026-11-12T09:00"},
+                {"title": "x", "start": "2026-11-12", "end": "2026-11-12T09:00"}, {"title": "x", "start": "2026-13-45"}, "x"):
+        assert mod.parse_event(bad) is None, bad
+    got = mod.parse_labels(json.dumps({"id": 1, "label": "Newsletter", "summary": "s",
+                                       "event": {"title": "Webinar", "start": "2026-11-12T10:00"}}), [1])
+    assert "event" not in got[1]   # never from a newsletter
+
+
+def test_the_card_puts_the_event_on_the_calendar_only_through_approvals(mod, monkeypatch):
+    monkeypatch.setattr(mod, "_tz", lambda: ZoneInfo("America/Los_Angeles"))
+    t = (NOW - dt.timedelta(hours=2)).isoformat()
+    msgs = [{"uid": 3, "from_name": "Pat Lee", "from_addr": "pat.lee@staffing.example", "subject": "Interview Thursday",
+             "label": "Job search", "summary": "Interview Thursday 10 AM", "pressing": "job reply", "received": t,
+             "excerpt": "Can you do Thursday at 10?", "event": {"title": "Interview with Acme", "start": "2026-11-12T10:00",
+                                                                 "place": "Zoom"}},
+            {"uid": 4, "from_addr": "x@spam.example", "subject": "s", "label": "Job search", "received": t, "junk": True,
+             "event": {"title": "Fake", "start": "2026-11-12T10:00"}},
+            {"uid": 5, "from_addr": "a@b.example", "subject": "old", "label": "Deadline", "received": t,
+             "event": {"title": "Was last week", "start": "2026-10-01"}}]
+    mod.save_state("home", {"status": "ok", "uidvalidity": "1", "messages": msgs})
+    cards = [c for c in mod.proposals({"home": {**GMAIL}}, None) if c["action"]["type"] == "calendar_add"]
+    assert len(cards) == 1
+    c = cards[0]
+    assert c["key"] == "event:home:1:3" and c["pressing"] is False and c["title"].startswith("Add to your calendar: Interview")
+    assert c["action"]["payload"] == {"title": "Interview with Acme", "start": "2026-11-12T10:00", "end": "2026-11-12T11:00",
+                                      "all_day": False, "company": "Personal", "place": "Zoom",
+                                      "notes": "From an email by Pat Lee: Interview Thursday"}
+    assert c["context"][0]["text"] == "Can you do Thursday at 10?" and {f["name"] for f in c["fields"]} >= {"title", "start"}
+
+
+def test_the_sort_is_asked_for_events_in_the_owners_zone(mod, monkeypatch):
+    monkeypatch.setattr(mod, "_tz", lambda: ZoneInfo("America/Los_Angeles"))
+    seen = []
+    mod.classify("Personal", [{"uid": 1, "from_addr": "a@b.c", "subject": "s", "body": "b", "received": "r"}], NOW,
+                 lambda p: seen.append(p) or "", personal=True)
+    assert '"event"' in seen[0] and "America/Los_Angeles" in seen[0] and "never a link" in seen[0]

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.12.6
+
+- Events from email: when an email names a specific date and time you're invited to, booked or must attend (an interview, a meeting, an appointment, a call, a reservation), an "Add to your calendar" card appears on the Approvals page with the time in your zone, the place and where it came from. Approve puts it on your own Hisho calendar exactly as shown (Hisho Core's `calendar_add`); Edit changes the time, title or place first; Reject drops it. Nothing is added by itself, nothing is sent to the sender, and nothing pushes. Never from newsletters, junk, Spam, a likely scam, or a time already past.
+
 ## 0.12.5
 
 - Sorting tuned from two weeks of real mail: a sign-in or verification code is never "Needs reply" or a customer request (so no reply is drafted for it), whatever the sort said, and one already sorted that way is put right once; "deadline 48h" means something the owner must do (pay, file, renew, answer, an appointment they booked), never a sale ending or a mailing list's webinar, members' call or event reminder (those are newsletters); a run of the same notice (the same sender and subject sent three times) pushes once. Job boards' mail (and addresses that say they're automated anywhere in the name, like jobalerts-noreply@) counts as job alerts, not as a person writing, unless someone waits on a reply.

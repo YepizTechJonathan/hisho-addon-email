@@ -47,6 +47,8 @@ Reads your company inboxes, tells you what needs you, and drafts replies; **noth
   `drafts: true`, and put a **job search** first: recruiters, interview requests, application updates and job alerts
   lead Today.md and the page, are never cleaned up, a likely job scam is flagged, and only someone waiting on your
   reply pushes to the phone.
+- **Events from email**: an email that names a date and time you're invited to or must attend gets an "Add to your
+  calendar" card on Approvals; Approve puts it on your Hisho calendar as shown (Edit first to change it).
 - Messages stay on the Core machine (`~/.local/state/hisho/addons/email/`), never in the vault.
 
 Each mailbox needs an **app password** (a separate password your provider makes for one app; with two-step sign-in
