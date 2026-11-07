@@ -106,7 +106,7 @@ INBOX = {
     2: mail("Webinar Thursday", bulk=True),
     3: mail("50% off everything", sender="Shop <deals@shop.com>", bulk=True),
     4: mail("You won a prize", sender="Prize <win@scam.biz>"),
-    5: mail("Your code is 123456", sender="Northwest <support@nw.com>"),
+    5: mail("Your code is 123456", sender="Agent Co <support@agent.example>"),
     6: mail("Re: our contract", sender="Ann Client <ann@client.com>"),       # someone the owner wrote to
     7: mail("Invoice 42", sender="Billing <bill@vendor.com>"),
     8: mail("Fresh news today", sender="Daily <news@daily.com>", date="Mon, 26 Oct 2026 05:00:00 -0700", bulk=True),

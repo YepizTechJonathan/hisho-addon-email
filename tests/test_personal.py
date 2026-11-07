@@ -198,3 +198,58 @@ def test_job_mail_sorted_before_this_version_is_sorted_again_once(mod):
     mod.poll("home", {**GMAIL, "folders": ""}, type("C", (), {"secret": lambda s, n: "pw"})(),
              now=NOW + dt.timedelta(minutes=5), ask=ask, connect_fn=lambda e, p: box)
     assert len(asked) == 1   # once
+
+
+# ── 0.12.5: label tuning from two weeks of real sorting ─────────────────────────────────────────────────────────
+
+def test_a_verification_code_never_needs_a_reply(mod):
+    def ask(prompt):
+        return "\n".join([json.dumps({"id": 1, "label": "Needs reply", "summary": "Verification code 123456, expires in 15 minutes"}),
+                          json.dumps({"id": 2, "label": "Needs reply", "summary": "Support asks which motherboard you have"})])
+    msgs = [{"uid": 1, "from_addr": "support@agent.example", "subject": "Your Verification Code - Expires in 15 Minutes",
+             "body": "b", "received": "r"},
+            {"uid": 2, "from_addr": "support@maker.example", "subject": "Pending request: the RAM stopped", "body": "b",
+             "received": "r"}]
+    got = mod.classify("Acme", msgs, NOW, ask)
+    assert got[1]["label"] == "Newsletter" and got[2]["label"] == "Needs reply"   # a support ticket still needs you
+
+
+def test_the_prompts_keep_marketing_reminders_out_of_deadlines(mod):
+    seen = []
+    mod.classify("Acme", [{"uid": 1, "from_addr": "a@b.c", "subject": "s", "body": "b", "received": "r"}], NOW,
+                 lambda p: seen.append(p) or "")
+    mod.classify("Personal", [{"uid": 1, "from_addr": "a@b.c", "subject": "s", "body": "b", "received": "r"}], NOW,
+                 lambda p: seen.append(p) or "", personal=True)
+    assert all("members' call" in p and "Newsletter" in p for p in seen)
+
+
+def test_a_run_of_the_same_notice_pushes_once(mod):
+    t = [(NOW - dt.timedelta(hours=h)).isoformat() for h in (30, 20, 2)]
+    msgs = [{"uid": i, "from_name": "Host", "from_addr": "no-reply@host.example", "subject": "Your cloud will be deleted soon!",
+             "label": "Deadline", "summary": "server deleted", "pressing": "deadline 48h", "received": t[i]} for i in range(3)]
+    msgs.append({"uid": 9, "from_name": "Host", "from_addr": "no-reply@host.example", "subject": "Your product will expire soon!",
+                 "label": "Deadline", "summary": "expires", "pressing": "deadline 48h", "received": t[2]})
+    mod.save_state("biz", {"status": "ok", "checked": NOW.isoformat(), "uidvalidity": "1", "messages": msgs})
+    biz = {"company": "Acme", "address": "a@acme.example", "password": "X"}
+    probs = mod.summary({"biz": biz}, type("C", (), {"secret": lambda s, n: "pw"})())["problems"]
+    assert len(probs) == 2 and probs[0]["key"].endswith("-2")   # the newest of the run, and the other notice
+
+
+def test_a_cached_code_sorted_as_needing_a_reply_is_put_right_once(mod):
+    t = (NOW - dt.timedelta(hours=5)).isoformat()
+    mod.save_state("home", {"status": "ok", "uidvalidity": "1", "last_uid": 10, "jobs_resorted": True, "messages": [
+        {"uid": 7, "from_addr": "support@agent.example", "subject": "Your Verification Code - Expires in 15 Minutes",
+         "label": "Needs reply", "summary": "code", "pressing": "", "received": t, "tries": 1,
+         "draft": {"subject": "Re: code", "body": "x"}}]})
+    mod.poll("home", {**GMAIL, "folders": ""}, type("C", (), {"secret": lambda s, n: "pw"})(), now=NOW,
+             ask=lambda p: "", connect_fn=lambda e, p: GmailBox())
+    [m] = mod.load_state("home")["messages"]
+    assert m["label"] == "Newsletter" and "draft" not in m
+
+
+def test_job_boards_and_hidden_noreply_addresses_are_alerts_not_people(mod):
+    for addr in ("jobalerts-noreply@linkedin.com", "messages-noreply@linkedin.com", "phil@ziprecruiter.com",
+                 "donotreply@match.indeed.com", "x@notifications.joinhandshake.com", "news@mg.jobsite.example"):
+        assert mod.kind({"label": "Job search", "from_addr": addr}) == "jobalert", addr
+    assert mod.kind({"label": "Job search", "from_addr": "pat.lee@staffing.example"}) == "job"
+    assert mod.kind({"label": "Job search", "from_addr": "alerts@linkedin.com", "pressing": "job reply"}) == "job"

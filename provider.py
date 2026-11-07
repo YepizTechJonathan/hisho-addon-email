@@ -646,7 +646,9 @@ already paid, the summary ends with "no action needed"); Deadline = a date by wh
 something must be done (filings, renewals, bids); Newsletter = bulk mail, updates, marketing the owner signed up
 for; Junk = spam, phishing, cold sales.
 Pressing only if the owner can and should act on it now: a client reporting a problem with their service ("client
-problem"), something due within 48 hours of now ("deadline 48h"), an overdue bill, failed payment or collections
+problem"), something the owner must do within 48 hours of now: pay, file, renew, answer, attend an appointment they
+booked ("deadline 48h"; never a sale ending, a "last chance", a webinar, a community or members' call or event
+reminder from a mailing list: those are Newsletter), an overdue bill, failed payment or collections
 ("payment notice"), or a court, government or lawyer's notice ("legal notice"). Marketing, receipts, newsletters
 and junk are never pressing, even if they say "urgent".
 
@@ -674,6 +676,8 @@ Bill or invoice = a bill, statement, payment due or receipt (for a receipt, a pa
 summary ends with "no action needed"); Deadline = something with a date: an appointment, a reservation, a renewal,
 a delivery to be home for, a form or payment due; Newsletter = bulk mail, promotions, shop and account updates,
 codes and routine notices; Junk = spam, phishing, scams, cold sales.
+A webinar, a community or members' call, an event or "last chance" reminder from a mailing list is Newsletter, not
+Deadline, unless they booked it themselves.
 Pressing only if they can and should act on it now: a recruiter, hiring manager or employer is waiting on their answer
 (an interview request or time to confirm, a question about an application; never a job alert or listing, never a
 scam) ("job reply"), something due within 48 hours of now ("deadline 48h"), an overdue
@@ -758,6 +762,11 @@ def classify(company: str, messages: list[dict[str, Any]], now: dt.datetime,
         company=company, now=now.strftime("%A %Y-%m-%d %H:%M %Z"), nonce=nonce, labels=", ".join(labels),
         pressing=", ".join(kinds), messages=fenced)
     got = parse_labels((ask or _claude)(prompt), list(range(1, len(messages) + 1)), labels, kinds)
+    for i, v in got.items():   # a sign-in or verification code never needs a reply, whatever the sort said
+        m = messages[i - 1]
+        if v["label"] in ("Needs reply", "Customer request") and \
+                _CODE.search(f"{m.get('subject') or ''} {v.get('summary') or ''}"):
+            v.update(label="Newsletter", pressing="")
     return {messages[i - 1]["uid"]: v for i, v in got.items()}
 
 
@@ -954,6 +963,13 @@ def _poll_one(name: str, entry: dict[str, Any], ctx: Any, *, now: dt.datetime | 
                 pass
     state.pop("refused", None)
     state["last_uid"], state["uidvalidity"] = top, validity
+    if not state.get("codes_fixed"):   # once, on 0.12.5: a cached code that was sorted as needing a reply
+        for m in kept:
+            if m.get("label") in ("Needs reply", "Customer request") and \
+                    _CODE.search(f"{m.get('subject') or ''} {m.get('summary') or ''}"):
+                m.update(label="Newsletter", pressing="")
+                m.pop("draft", None)
+        state["codes_fixed"] = True
     if is_personal(entry) and not state.get("jobs_resorted"):   # once, on 0.12.4: the job hunt's mail sorted again
         for m in kept:
             if m.get("label") != JOB and not m.get("moved_from") and \
@@ -1195,6 +1211,21 @@ def _item_id(m: dict[str, Any]) -> str:
 
 _AUTOMATED = re.compile(r"^(no-?reply|do-?not-?reply|donotreply|notifications?|notify|alerts?|mailer-daemon|bounces?|"
                         r"postmaster|automated|system)([+._-].*)?@", re.I)
+
+
+#: job boards and their mailers: what they send is an alert or a listing, counted, unless someone waits on a reply
+JOB_BOARDS = ("linkedin.com", "indeed.com", "indeedemail.com", "ziprecruiter.com", "monster.com", "glassdoor.com",
+              "joinhandshake.com", "jobs2careers.com", "dice.com", "usajobs.gov", "careerbuilder.com", "simplyhired.com")
+_BOT_WORDS = re.compile(r"no-?reply|do-?not-?reply|alerts?|notifications?|updates?|news|digest|marketing|mailer", re.I)
+
+
+def job_bot(addr: Any) -> bool:
+    """A job email from a machine, not a person: a job board's domain, or an address that says it is automated
+    anywhere in its name (jobalerts-noreply@...)."""
+    a = str(addr or "").lower()
+    local, _, domain = a.partition("@")
+    return automated(a) or bool(_BOT_WORDS.search(local)) or any(domain == d or domain.endswith("." + d)
+                                                                  for d in JOB_BOARDS)
 
 
 def automated(addr: Any) -> bool:
@@ -1507,10 +1538,15 @@ def summary(entries: dict[str, dict[str, Any]], ctx: Any) -> dict[str, Any]:
         every, _junk = reported(name, entry)
         need = [m for m in every if kind(m) in ACT_VERBS and m["received"] >= day]
         heads.append(f"{company}: {len(need)} need you (24 h)")
-        for sname, _folder in streams(name, entry):
-            sst = st if sname == name else load_state(sname)
-            for m in _pressing(entry, sst, now):
-                problems.append(_pressing_problem(name, sname, sst, entry, company, m))
+        alike: set[tuple[str, str]] = set()   # one push for a run of the same notice (a renewal sent three times)
+        found = [(sname, sst, m) for sname, _folder in streams(name, entry)
+                 for sst in [st if sname == name else load_state(sname)] for m in _pressing(entry, sst, now)]
+        for sname, sst, m in sorted(found, key=lambda x: x[2]["received"], reverse=True):
+            same = (str(m.get("from_addr") or "").lower(), norm_subject(m.get("subject")))
+            if same in alike:
+                continue
+            alike.add(same)
+            problems.append(_pressing_problem(name, sname, sst, entry, company, m))
     state = "warn" if "error" in states else "unknown" if all(s in ("waiting", "starting") for s in states) else "ok"
     return {"state": state, "headline": " · ".join(heads), "problems": problems}
 
@@ -1543,7 +1579,7 @@ def kind(m: dict[str, Any]) -> str:
     if not label:
         return "unlabelled"
     if label == JOB:   # a person about a job (or one waiting on a reply) is listed; a job board's alert is counted
-        return "job" if m.get("pressing") or not automated(m.get("from_addr")) else "jobalert"
+        return "job" if m.get("pressing") or not job_bot(m.get("from_addr")) else "jobalert"
     if label in ("Needs reply", "Customer request"):
         if m.get("answered"):
             return "answered"
@@ -1552,6 +1588,8 @@ def kind(m: dict[str, Any]) -> str:
         return "reply" if label == "Needs reply" else "customer"
     if label == "Bill or invoice":
         return "receipt" if _NO_ACTION.search(str(m.get("summary") or "")) and not m.get("pressing") else "bill"
+    if label == "Newsletter" and _CODE.search(f"{m.get('subject') or ''} {m.get('summary') or ''}"):
+        return "notice"   # a code counts as a notice, whichever label it got
     return {"Deadline": "deadline", "Newsletter": "newsletter", "Junk": "junk"}.get(label, "unlabelled")
 
 

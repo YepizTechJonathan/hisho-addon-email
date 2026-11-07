@@ -458,14 +458,14 @@ def test_morning_lists_only_what_he_must_act_on_one_short_line_each(monkeypatch)
     fake = FakeIMAP({1: ("20-Oct-2026 09:00:00 -0700", raw("x", "x"))})
     run(fake, labeller([{"id": 1, "label": "Newsletter", "summary": "x"}]), now=NOW - dt.timedelta(days=1))
     fake.messages.update({
-        2: ("23-Oct-2026 10:00:00 -0700", raw("Your Verification Code - Expires in 15 Minutes", "727412",
-                                              sender="support@northwestregisteredagent.com")),
+        2: ("23-Oct-2026 10:00:00 -0700", raw("Your Verification Code - Expires in 15 Minutes", "314159",
+                                              sender="support@registered-agent.example")),
         3: ("23-Oct-2026 10:05:00 -0700", raw("Your $99.71 payout is on the way", "x", sender="Stripe <s@stripe.com>")),
         4: ("23-Oct-2026 10:10:00 -0700", raw("Invoice 42 due Nov 1", "x", sender="Acme Billing <b@acme.com>")),
         5: ("23-Oct-2026 10:20:00 -0700", raw("Fwd: BookingPro Event Form Setup for the website",
                                               "x", sender="Sam Rivera <s@hb.example>")),
     })
-    run(fake, labeller([{"id": 1, "label": "Needs reply", "summary": "Northwest verification code 727412"},
+    run(fake, labeller([{"id": 1, "label": "Needs reply", "summary": "Agent Co verification code 314159"},
                         {"id": 2, "label": "Bill or invoice", "summary": "Stripe payout receipt, arriving Oct 26."},
                         {"id": 3, "label": "Bill or invoice", "summary": "Invoice 42 for $300, due Nov 1"},
                         {"id": 4, "label": "Customer request", "summary": "Wants the lead form on the site"}]))

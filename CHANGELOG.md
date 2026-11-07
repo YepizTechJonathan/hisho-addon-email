@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.12.5
+
+- Sorting tuned from two weeks of real mail: a sign-in or verification code is never "Needs reply" or a customer request (so no reply is drafted for it), whatever the sort said, and one already sorted that way is put right once; "deadline 48h" means something the owner must do (pay, file, renew, answer, an appointment they booked), never a sale ending or a mailing list's webinar, members' call or event reminder (those are newsletters); a run of the same notice (the same sender and subject sent three times) pushes once. Job boards' mail (and addresses that say they're automated anywhere in the name, like jobalerts-noreply@) counts as job alerts, not as a person writing, unless someone waits on a reply.
+
 ## 0.12.4
 
 - Job search, for personal mailboxes: recruiters, employers, interview requests, application updates and job boards' alerts get their own label. They lead Today's Email section (a "Job search" block: people first, the ones waiting on your reply marked, alerts counted by sender) and the mailbox's page, and are never offered for clean-up (the header sort has a Jobs group that stays). A push comes only when a recruiter or employer waits on your answer ("job reply"). Mail that looks like a job scam (a fee, gift cards, bank or ID details up front, a domain that doesn't match the company) is flagged and never pushed. Mail sorted before this version that looks job-related is sorted again once.
