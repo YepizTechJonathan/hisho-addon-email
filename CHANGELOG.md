@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.13.0
+
+- Ask Hisho drafts email: the dashboard's chat (and Hisho's MCP) gets two tools, `draft_reply` (find an email by who sent it, in any mailbox, and answer it as the owner says, from the mailbox they name, threaded) and `draft_email` (a new one, to addresses the owner gave). The draft is saved in the sending mailbox's own Drafts folder (`drafts.py`, the only code that may APPEND there, flagged \\Draft; `drafts_folder` overrides the folder), where the owner opens it, edits it and presses Send. Nothing is sent. Before, the chat had no way to reach email at all and could only say so (Jonathan, 2026-11-07: "I want it on Zoho as a draft").
+- The chat's Claude never sees mail: the add-on finds the email and a Claude with no tools writes the reply (the sender's text fenced as data, the owner's words as the ask); Hisho Core passes back only ok / message / to / send_from / choices (address, mailbox, time). A body Hisho had let go after sorting is read again read-only (EXAMINE + BODY.PEEK). Senders are matched without accents ("Jesus Juarez" finds "Jesús Juárez").
+- The Email page's New email still drafts onto the Approvals page, unchanged.
+
 ## 0.12.6
 
 - Events from email: when an email names a specific date and time you're invited to, booked or must attend (an interview, a meeting, an appointment, a call, a reservation), an "Add to your calendar" card appears on the Approvals page with the time in your zone, the place and where it came from. Approve puts it on your own Hisho calendar exactly as shown (Hisho Core's `calendar_add`); Edit changes the time, title or place first; Reject drops it. Nothing is added by itself, nothing is sent to the sender, and nothing pushes. Never from newsletters, junk, Spam, a likely scam, or a time already past.

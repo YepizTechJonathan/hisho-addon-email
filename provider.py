@@ -34,6 +34,7 @@ import secrets
 import ssl
 import threading
 import time
+import unicodedata
 import importlib.util
 from pathlib import Path
 from typing import Any, Callable
@@ -44,6 +45,9 @@ _spec.loader.exec_module(sender)
 _spec = importlib.util.spec_from_file_location("hisho_addon_email_cleanup", Path(__file__).with_name("cleanup.py"))
 cleaner = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(cleaner)
+_spec = importlib.util.spec_from_file_location("hisho_addon_email_drafts", Path(__file__).with_name("drafts.py"))
+drafter = importlib.util.module_from_spec(_spec)   # the only code that adds to a Drafts folder (Ask Hisho's drafts)
+_spec.loader.exec_module(drafter)
 _spec = importlib.util.spec_from_file_location("hisho_addon_email_autoconfig", Path(__file__).with_name("autoconfig.py"))
 mailconf = importlib.util.module_from_spec(_spec)   # finds a mailbox's servers from its address (Set up this mailbox)
 _spec.loader.exec_module(mailconf)
@@ -858,12 +862,26 @@ def _one_json(text: str) -> dict[str, Any]:
     raise MailError("Claude answered without a draft")
 
 
+OWNER_ASK = """The owner told you what this reply should say; their words sit between <<<ASK {nonce}>>> and <<<END {nonce}>>>.
+They come from the owner, not the sender: follow them (language, tone, what to say), still within the rules above.
+<<<ASK {nonce}>>>
+{ask}
+<<<END {nonce}>>>
+"""
+
+
 def draft_reply(entry: dict[str, Any], m: dict[str, Any], now: dt.datetime,
-                ask: Callable[[str], str] | None = None) -> dict[str, str]:
+                ask: Callable[[str], str] | None = None, instruction: str = "") -> dict[str, str]:
+    """A reply to ``m`` from ``entry`` (the mailbox it goes from). ``instruction``: what the owner asked for (Ask
+    Hisho's draft_reply), fenced apart from the sender's text, which stays data."""
     nonce = secrets.token_hex(6)
     form = entry.get("request_form")
     form_rule = (f"If it is a customer asking for work, a change or support, ask them to put the request in through "
                  f"{form} so it's tracked (say it kindly, once).\n") if form and m.get("label") == "Customer request" else ""
+    if instruction and form and not form_rule:
+        form_rule = f"The owner's request form, if they ask you to point to it: {form}\n"
+    if instruction:
+        form_rule += OWNER_ASK.format(nonce=nonce, ask=" ".join(str(instruction).split()).replace(nonce, "")[:2000])
     prompt = DRAFT_PROMPT.format(company=entry.get("company"), address=entry.get("address"),
                                  now=now.strftime("%A %Y-%m-%d %H:%M %Z"), nonce=nonce, form_rule=form_rule,
                                  signature=signature(entry), sender=f"{m.get('from_name') or ''} {m.get('from_addr') or ''}".replace(nonce, ""),
@@ -2029,14 +2047,32 @@ def _looks(entry: dict[str, Any], body: str) -> list[dict[str, str]]:
     return [{"label": "How it will look (with your signature)", "text": "", "html": as_html}] if as_html else []
 
 
+VIA = {"page": "from the Email page", "chat": "in Ask Hisho"}
+
+
 def _compose_card(name: str, entry: dict[str, Any], c: dict[str, Any]) -> dict[str, Any]:
-    return {"key": f"new:{name}:{c['id']}", "company": entry.get("company") or name, "context": _looks(entry, c["body"]),
-            "title": f"Send new email: {c['subject']}"[:200],
-            "why": (f"You asked (from the Email page): \"{_clean(c['ask'], 300)}\". Approve sends it from "
-                    f"{entry.get('address')} to the recipients below, as shown."),
+    """A card for an email the owner asked for: a new one (the Email page's New email, Ask Hisho's draft_email) or a
+    reply to an email Hisho read (Ask Hisho's draft_reply, threaded to it, maybe from another of their mailboxes)."""
+    via = VIA.get(str(c.get("via") or "page"), VIA["page"])
+    reply = c.get("reply") or {}
+    context = _looks(entry, c["body"])
+    if reply:
+        context = [{"label": "Their email (as received)", "text": reply.get("excerpt") or "(not kept)"}, *context]
+        title = f"Send reply to {reply.get('who') or ', '.join(c['to'])}: {c['subject']}"
+        why = (f"You asked {via}: \"{_clean(c['ask'], 300)}\". A reply to {reply.get('who') or ''} "
+               f"<{', '.join(c['to'])}>, whose email reached {reply.get('mailbox_address') or 'you'} on "
+               f"{when(reply.get('received') or '')}. Approve sends the reply below from {entry.get('address')}, as "
+               "shown; nothing goes out before that.")
+    else:
+        title = f"Send new email: {c['subject']}"
+        why = (f"You asked {via}: \"{_clean(c['ask'], 300)}\". Approve sends it from "
+               f"{entry.get('address')} to the recipients below, as shown.")
+    return {"key": f"new:{name}:{c['id']}", "company": entry.get("company") or name, "context": context,
+            "title": title[:200], "why": why,
             "action": {"type": "email.send", "payload": {"mailbox": name, "to": c["to"],
                                                          "cc": [], "subject": c["subject"], "body": c["body"],
-                                                         "in_reply_to": "", "references": []}}}
+                                                         "in_reply_to": c.get("in_reply_to") or "",
+                                                         "references": list(c.get("references") or [])}}}
 
 
 def act(entries: dict[str, dict[str, Any]], ctx: Any, entry: str, item: str, action: str) -> dict[str, Any]:
@@ -2050,27 +2086,246 @@ def act(entries: dict[str, dict[str, Any]], ctx: Any, entry: str, item: str, act
         return {"ok": True, "message": "Looking through the inbox; the card shows on the Approvals page in a few minutes."}
     if item != "new" or action != "compose" or entry not in entries:
         return {"ok": False, "error": "Email's only button is New email; everything else waits on the Approvals page"}
-    ask = " ".join(str(ctx.input or "").split())
+    res = new_email(entry, entries[entry], " ".join(str(ctx.input or "").split()), via="page")
+    if res.get("ok"):
+        res["message"] = "Drafted. It's on the Approvals page: look it over, Edit if needed, then Send."
+    return res
+
+
+def _offer(name: str, entry: dict[str, Any], c: dict[str, Any]) -> str:
+    """Keep a drafted email in its mailbox's state and put its card on the Approvals list now; its card key."""
+    st = load_state(name)
+    st["compose"] = (st.get("compose") or []) + [c]
+    save_state(name, st)
+    card = _compose_card(name, entry, c)
+    try:
+        from hisho import approvals
+        approvals.propose("email", card["key"], card["title"], card["why"], card["action"], company=card["company"],
+                          root=os.environ.get("HISHO_ROOT") or "~/Hisho")
+    except Exception:  # noqa: BLE001 -- the next check offers it anyway (proposals lists the mailbox's compose)
+        pass
+    return card["key"]
+
+
+def new_email(name: str, entry: dict[str, Any], ask: str, *, via: str = "page", ctx: Any = None,
+              imap_factory: Callable[..., Any] | None = None) -> dict[str, Any]:
+    """A new email drafted from the owner's words (Claude, no tools), to addresses they typed only: from the Email page
+    a card on Approvals; from Ask Hisho (``via="chat"``) a draft in the mailbox's own Drafts folder."""
     if not ask:
         return {"ok": False, "error": "say who it's to and what it should say"}
     now = _now()
     try:
-        drafted = compose(entries[entry], ask, now)
+        drafted = compose(entry, ask, now)
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": f"Claude couldn't draft it: {str(exc)[:200]}"}
     if not drafted["to"]:
         return {"ok": False, "error": "include their email address in what you type (Hisho only sends to addresses you wrote)"}
     if not drafted["body"]:
         return {"ok": False, "error": "Claude's draft was empty; try saying a bit more"}
-    c = {"id": secrets.token_hex(4), "ask": ask[:1000], "at": now.isoformat(timespec="seconds"), **drafted}
-    st = load_state(entry)
-    st["compose"] = (st.get("compose") or []) + [c]
-    save_state(entry, st)
+    c = {"id": secrets.token_hex(4), "ask": ask[:1000], "at": now.isoformat(timespec="seconds"), "via": via, **drafted}
+    if via == "chat":
+        saved = save_draft(name, entry, c, ctx, imap_factory=imap_factory)
+        if not saved.get("ok"):
+            return saved
+        return {"ok": True, "to": drafted["to"], "send_from": entry.get("address"),
+                "message": (f"Saved a new email to {', '.join(drafted['to'])} in the {saved['folder']} folder of "
+                            f"{entry.get('address')}. Open it there, change what you like and press Send. Nothing was sent.")}
+    key = _offer(name, entry, c)
+    return {"ok": True, "card": key, "to": drafted["to"], "send_from": entry.get("address"),
+            "message": (f"Drafted a new email to {', '.join(drafted['to'])} from {entry.get('address')}. It waits on "
+                        "the Approvals page: look it over, Edit if needed, then Send. Nothing was sent.")}
+
+
+def save_draft(name: str, entry: dict[str, Any], c: dict[str, Any], ctx: Any, *,
+               imap_factory: Callable[..., Any] | None = None) -> dict[str, Any]:
+    """Put a drafted email (``c``: to, subject, body, threading) in ``entry``'s own Drafts folder (drafts.py), built
+    exactly as Send would build it (plain text + the owner's HTML sign-off, threaded). Journaled ``email-draft-saved``."""
+    payload = {"mailbox": name, "to": c["to"], "cc": [], "subject": c["subject"], "body": c["body"],
+               "in_reply_to": c.get("in_reply_to") or "", "references": list(c.get("references") or [])}
     try:
-        from hisho import approvals
-        card = _compose_card(entry, entries[entry], c)
-        approvals.propose("email", card["key"], card["title"], card["why"], card["action"], company=card["company"],
-                          root=os.environ.get("HISHO_ROOT") or "~/Hisho")
-    except Exception:  # noqa: BLE001 -- the next check offers it anyway
+        payload = sender.validate(payload)
+        password = ctx.secret(str(entry.get("password") or ""))
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": f"can't save the draft: {str(exc)[:200]}"}
+    msg = sender.build(entry, payload)
+    msg["X-Hisho-Draft"] = "asked in Ask Hisho"
+    res = drafter.save(entry, password, msg.as_bytes(), str(msg["Message-ID"]),
+                       **({"imap_factory": imap_factory} if imap_factory else {}))
+    if not res.get("ok"):
+        return {"ok": False, "error": f"Couldn't save it in {entry.get('address')}'s Drafts: {res.get('error')}"}
+    try:
+        from hisho.jobs import append_event
+        append_event(Path(os.environ.get("HISHO_ROOT") or "~/Hisho").expanduser(), "email-draft-saved",
+                     {"addon": "email", "mailbox": name, "from": entry.get("address"), "to": payload["to"],
+                      "subject": payload["subject"], "folder": res["folder"], "message_id": str(msg["Message-ID"]),
+                      "in_reply_to": payload["in_reply_to"], "checked": res.get("checked")})
+    except Exception:  # noqa: BLE001
         pass
-    return {"ok": True, "message": "Drafted. It's on the Approvals page: look it over, Edit if needed, then Send."}
+    return res
+
+
+# ── what Claude may do (addon.yaml assistant_tools; Hisho shows Claude only ok/message/card/to/send_from/choices) ──
+#
+# Ask Hisho's Claude holds Hisho's tools, so it never reads mail: these tools find the email here, have Claude
+# with NO tools write the draft (the sender's text fenced as data, the owner's words as the ask), and save it in the
+# sending mailbox's own Drafts folder (drafts.py; Jonathan 2026-11-07: "I want it on Zoho as a draft"). What goes
+# back is this add-on's own sentence, the recipient and, when more than one email fits, address / company / time to
+# choose from. Nothing is sent: the owner opens the draft in their mail and presses Send there.
+
+FIND_DAYS = KEEP_DAYS     # what Hisho keeps of a mailbox (two weeks)
+_MARKS = re.compile(r"[\u0300-\u036f]")
+
+
+def _fold(text: Any) -> str:
+    """Lower case without accents: "Jesús Juárez" is found as "jesus juarez"."""
+    return _MARKS.sub("", unicodedata.normalize("NFKD", str(text or ""))).lower()
+
+
+def _words(text: Any) -> list[str]:
+    return [w for w in re.findall(r"[a-z0-9][a-z0-9@._+'-]*", _fold(text)) if len(w) >= 2]
+
+
+def find_mail(entries: dict[str, dict[str, Any]], who: str, about: str = "", now: dt.datetime | None = None
+              ) -> list[tuple[str, dict[str, Any], dict[str, Any]]]:
+    """(mailbox name, entry, message) of the emails from ``who`` (name or address, every word must be in the sender)
+    in every mailbox, newest first; ``about`` narrows by words of the subject or Hisho's summary when any fit. The
+    owner's own mail and automated senders are left out (nobody reads replies there)."""
+    now = now or _now()
+    want = _words(who)
+    if not want:
+        return []
+    cutoff = (now - dt.timedelta(days=FIND_DAYS)).isoformat()
+    found, seen = [], set()
+    for name, entry in entries.items():
+        own = own_addresses(entry)
+        for m in _all_messages(name, entry):
+            addr = str(m.get("from_addr") or "").lower()
+            if not addr or addr in own or automated(addr) or str(m.get("received") or "") < cutoff:
+                continue
+            sender = _fold(f"{m.get('from_name') or ''} {addr}")
+            if not all(w in sender for w in want):
+                continue
+            key = m.get("message_id") or f"{name}:{m.get('_stream')}:{m.get('uid')}"
+            if key in seen:
+                continue
+            seen.add(key)
+            found.append((name, entry, m))
+    found.sort(key=lambda f: str(f[2].get("received") or ""), reverse=True)
+    topic = [w for w in _words(about) if len(w) >= 3]
+    if topic:
+        fits = [f for f in found if any(w in _fold(f"{f[2].get('subject') or ''} {f[2].get('summary') or ''}")
+                                        for w in topic)]
+        found = fits or found
+    return found
+
+
+def pick_mailbox(entries: dict[str, dict[str, Any]], send_from: str) -> tuple[str, dict[str, Any]] | str:
+    """The mailbox ``send_from`` names (its name, company, address or the address's domain, any case); else the
+    sentence saying which there are."""
+    say = _fold(send_from).strip().strip("@")
+    def names(e: tuple[str, dict[str, Any]]) -> set[str]:
+        addr = str(e[1].get("address") or "").lower()
+        return {_fold(e[0]), _fold(e[1].get("company") or ""), addr, addr.split("@")[-1],
+                re.sub(r"[^a-z0-9]", "", _fold(e[1].get("company") or ""))}
+    hits = [e for e in entries.items() if say and (say in names(e) or re.sub(r"[^a-z0-9]", "", say) in names(e))]
+    if len({e[0] for e in hits}) == 1:
+        return hits[0]
+    listed = "; ".join(f"{n} ({e.get('company') or n}, {e.get('address')})" for n, e in entries.items())
+    return (f"{send_from!r} matches {'more than one' if hits else 'none'} of the mailboxes: {listed}. "
+            "Say which one by its name, company or address.")
+
+
+def fetch_body(entry: dict[str, Any], ctx: Any, m: dict[str, Any], connect_fn: Callable[..., Any] | None = None) -> str:
+    """The text of one email Hisho dropped after labelling it, read again (EXAMINE + BODY.PEEK: nothing changes)."""
+    password = ctx.secret(str(entry.get("password") or ""))
+    conn = (connect_fn or imap_connect)(entry, password)
+    try:
+        typ, data = conn.select(mailbox(str(m.get("folder") or "INBOX")), readonly=True)
+        if typ != "OK":
+            raise MailError(f"can't open {m.get('folder')}")
+        got = _fetch_parts(conn, [int(m["uid"])], f"(UID BODY.PEEK[]<0.{FETCH_BYTES}>)")
+    finally:
+        try:
+            conn.logout()
+        except Exception:  # noqa: BLE001
+            pass
+    if int(m["uid"]) not in got:
+        raise MailError("that email is no longer where Hisho saw it (moved or deleted)")
+    parsed = parse_message(got[int(m["uid"])])
+    if (m.get("message_id") or "") and parsed.get("message_id") and parsed["message_id"] != m["message_id"]:
+        raise MailError("the mailbox changed since Hisho read that email; try again after the next check")
+    return parsed["body"]
+
+
+def _choice(i: int, name: str, entry: dict[str, Any], m: dict[str, Any]) -> dict[str, Any]:
+    return {"pick": i, "who": m.get("from_addr") or "", "where": f"{entry.get('company') or name} ({entry.get('address')})",
+            "when": when(str(m.get("received") or ""))}
+
+
+def tool_draft_reply(entries: dict[str, dict[str, Any]], ctx: Any, args: dict[str, Any], *,
+                     ask: Callable[[str], str] | None = None, connect_fn: Callable[..., Any] | None = None,
+                     imap_factory: Callable[..., Any] | None = None) -> dict[str, Any]:
+    who, about = str(args.get("from_who") or ""), str(args.get("about") or "")
+    found = find_mail(entries, who, about)
+    if not found:
+        return {"ok": False, "error": (f"No email from {who!r} in the last {FIND_DAYS} days in any mailbox Hisho reads "
+                                       f"({', '.join(e.get('address') or n for n, e in entries.items())}). Ask the "
+                                       "owner for the sender's address, or to check it reached one of these.")}
+    pick = args.get("pick")
+    senders = {f[2].get("from_addr", "").lower() for f in found}
+    if pick:
+        if not 1 <= int(pick) <= len(found):
+            return {"ok": False, "error": f"pick is 1 to {len(found)}",
+                    "choices": [_choice(i, *f) for i, f in enumerate(found[:10], 1)]}
+        name, entry, m = found[int(pick) - 1]
+    elif len(senders) > 1:
+        return {"ok": False, "error": "More than one sender fits: ask the owner which one, then call again with pick.",
+                "choices": [_choice(i, *f) for i, f in enumerate(found[:10], 1)]}
+    else:
+        name, entry, m = found[0]   # one sender: their newest email (or the newest that fits ``about``)
+    if args.get("send_from"):
+        chosen = pick_mailbox(entries, str(args["send_from"]))
+        if isinstance(chosen, str):
+            return {"ok": False, "error": chosen}
+        out_name, out_entry = chosen
+    else:
+        out_name, out_entry = name, entry
+    body = m.get("body") or m.get("excerpt") or ""
+    if not body:
+        try:
+            body = fetch_body(entry, ctx, m, connect_fn)
+        except Exception as exc:  # noqa: BLE001 -- said plainly; nothing drafted
+            return {"ok": False, "error": f"Hisho couldn't read that email again: {str(exc)[:200]}"}
+    now = _now()
+    try:
+        drafted = draft_reply(out_entry, {**m, "body": body}, now, ask, instruction=str(args.get("instructions") or ""))
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": f"Claude couldn't draft it: {str(exc)[:200]}"}
+    refs = [r for r in (m.get("references") or []) if r] + ([m["message_id"]] if m.get("message_id") else [])
+    c = {"id": secrets.token_hex(4), "ask": str(args.get("instructions") or "Reply")[:1000], "via": "chat",
+         "at": now.isoformat(timespec="seconds"), "to": [m["from_addr"]], "subject": drafted["subject"],
+         "body": drafted["body"], "in_reply_to": m.get("message_id") or "", "references": refs[-20:],
+         "reply": {"who": _sender(m), "received": m.get("received") or "", "mailbox": name,
+                   "mailbox_address": entry.get("address") or "", "excerpt": body[:1500]}}
+    saved = save_draft(out_name, out_entry, c, ctx, imap_factory=imap_factory)
+    if not saved.get("ok"):
+        return saved
+    more = len(found) - 1
+    return {"ok": True, "to": [m["from_addr"]], "send_from": out_entry.get("address"),
+            "message": (f"Saved a reply to {m['from_addr']} (their email of {when(str(m.get('received') or ''))}, "
+                        f"in {entry.get('company') or name}) in the {saved['folder']} folder of "
+                        f"{out_entry.get('address')}. Open it there, change what you like and press Send. Nothing was sent."
+                        + (f" {more} other email(s) from them fit too; this is the newest. Say if you meant another "
+                           "and call again with pick." if more else "")),
+            **({"choices": [_choice(i, *f) for i, f in enumerate(found[:10], 1)]} if more else {})}
+
+
+def tool_draft_email(entries: dict[str, dict[str, Any]], ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
+    chosen = pick_mailbox(entries, str(args.get("send_from") or ""))
+    if isinstance(chosen, str):
+        if len(entries) != 1 or args.get("send_from"):
+            return {"ok": False, "error": chosen}
+        chosen = next(iter(entries.items()))
+    name, entry = chosen
+    ask = " ".join(f"To: {args.get('to') or ''}. {args.get('instructions') or ''}".split())
+    return new_email(name, entry, ask, via="chat", ctx=ctx)

@@ -17,13 +17,32 @@ name: email
 kind: integration
 title: Email
 description: Reads your company inboxes, drafts replies and clean-ups; sends or moves to Trash only when you approve.
-version: 0.12.6
+version: 0.13.0
 you_need:
   - "A mailbox that offers IMAP and SMTP (Gmail / Google Workspace, Zoho, iCloud, Yahoo, Fastmail, your host's mail...)"
   - "An app password for it (not your normal password); Set up this mailbox says where your provider makes one"
 provider: provider.py
 private: true                     # the page shows other people's messages: owner's devices or Core's token only
 entry_label: mailbox
+# What Claude may do (Ask Hisho, Hisho's MCP): draft into the mailbox's own Drafts folder (drafts.py), never send. Hisho shows Claude only whether it worked, this
+# add-on's own sentence, the card and, when several emails fit, address / mailbox / time: never a subject or a body.
+assistant_tools:
+  draft_reply:
+    description: "Draft a reply to an email the owner received, in any of their mailboxes (the last two weeks). Hisho finds it by who sent it, Claude with no tools writes the reply as the owner asked, and it is saved in the Drafts folder of the mailbox it goes from (Zoho, Gmail...), where the owner opens it, edits it and presses Send. Nothing is sent. You never see the email itself; if several senders fit, it gives choices to ask the owner about (call again with pick)."
+    params:
+      from_who: "str"          # the sender's name or address as the owner said it, e.g. "Jesus Juarez"
+      instructions: "str"      # what the reply should say, in the owner's words (language, tone, the request form...)
+      send_from: "str?"        # which of the owner's mailboxes it goes from: its name, company, address or domain (e.g. yepiz.tech); default the one it arrived in
+      about: "str?"            # words of its subject, when the sender wrote more than once
+      pick: "int?"             # the choice the owner picked, from a previous answer's choices
+    write: true
+  draft_email:
+    description: "Draft a new email from one of the owner's mailboxes to addresses the owner gave. Claude with no tools writes it as asked and it is saved in that mailbox's Drafts folder for the owner to open, edit and Send. Nothing is sent."
+    params:
+      to: "str"                # the recipients' email addresses, as the owner gave them
+      instructions: "str"      # what it should say, in the owner's words
+      send_from: "str?"        # which mailbox: its name, company, address or domain
+    write: true
 secret_rotate: "Your mail provider's app passwords page (Zoho: accounts.zoho.com > Security > App Passwords; Google: myaccount.google.com/apppasswords); one per mailbox, IMAP read + SMTP send"
 entry_schema:
   company: str                    # Acme, Globex... (the page and Today.md group by it)
@@ -37,6 +56,7 @@ entry_schema:
   personal: "bool?"               # a personal mailbox: sorted for a person (bills, appointments, deliveries, security notices, people you know), not a business (default: true when company is Personal)
   drafts: "bool?"                 # reply drafts on the Approvals page (default: on for a business mailbox, off for a personal one)
   request_form: "str?"            # a form to point customer requests at, named in their summary and drafts
+  drafts_folder: "str?"           # where Ask Hisho's drafts go (default: the folder the server marks Drafts, else Drafts / [Gmail]/Drafts)
   sent_folder: "str?"             # default Sent (read to spot answered mail; a sent reply's copy is filed here)
   smtp_host: "str?"               # default smtppro.zoho.com with an imappro mailbox, else smtp.zoho.com
   smtp_port: "port?"              # default 465 (TLS); 587 = STARTTLS (Microsoft, iCloud)

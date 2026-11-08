@@ -74,6 +74,7 @@ mailbox shows "waiting for app password": no error and no alert.
   - `personal` (bool, optional)
   - `drafts` (bool, optional)
   - `request_form` (str, optional)
+  - `drafts_folder` (str, optional)
   - `sent_folder` (str, optional)
   - `smtp_host` (str, optional)
   - `smtp_port` (port, optional)
@@ -101,6 +102,14 @@ before.
 ## How to use
 
 **Add-ons > Email** shows each mailbox: what needs a reply, customer requests, bills and deadlines, with a drafted reply for each. **Send** puts the draft on Approvals: nothing goes out until you press Approve there. A daily **Clean up** card suggests newsletters and junk to move to Trash, again only on your press. The page is private: only your own devices see it.
+
+**Ask Hisho can draft for you.** In the dashboard's chat, say something like "draft a reply to Jesús pointing him to
+the request form, from my yepiz.tech email". Hisho finds the email (any mailbox, the last two weeks), writes the reply
+the way you asked and saves it in the **Drafts folder of the mailbox it goes from** (Zoho, Gmail...): open it there,
+change what you like and press Send yourself. "Write a new email to ann@example.com about..." works the same way.
+Nothing is ever sent from the chat. The chat's Claude never sees your mail: the add-on does the finding and the
+writing (with a Claude that has no tools), and tells the chat only whether it worked, who it's to and which Drafts
+folder it's in. If several people fit the name, it asks which one you mean.
 
 **Proton Mail is not supported** (since 0.10.0). A Proton address says so on Set up this mailbox, and a mailbox set
 up through Proton Mail Bridge before shows a warning on the page instead of being read. Any other provider works: the
