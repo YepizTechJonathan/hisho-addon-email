@@ -17,7 +17,7 @@ name: email
 kind: integration
 title: Email
 description: Reads your company inboxes, drafts replies and clean-ups; sends or moves to Trash only when you approve.
-version: 0.13.0
+version: 0.13.1
 you_need:
   - "A mailbox that offers IMAP and SMTP (Gmail / Google Workspace, Zoho, iCloud, Yahoo, Fastmail, your host's mail...)"
   - "An app password for it (not your normal password); Set up this mailbox says where your provider makes one"
@@ -30,9 +30,9 @@ assistant_tools:
   draft_reply:
     description: "Draft a reply to an email the owner received, in any of their mailboxes (the last two weeks). Hisho finds it by who sent it, Claude with no tools writes the reply as the owner asked, and it is saved in the Drafts folder of the mailbox it goes from (Zoho, Gmail...), where the owner opens it, edits it and presses Send. Nothing is sent. You never see the email itself; if several senders fit, it gives choices to ask the owner about (call again with pick)."
     params:
-      from_who: "str"          # the sender's name or address as the owner said it, e.g. "Jesus Juarez"
+      from_who: "str"          # the sender's name or address as the owner said it, e.g. "Renee Cote"
       instructions: "str"      # what the reply should say, in the owner's words (language, tone, the request form...)
-      send_from: "str?"        # which of the owner's mailboxes it goes from: its name, company, address or domain (e.g. yepiz.tech); default the one it arrived in
+      send_from: "str?"        # which of the owner's mailboxes it goes from: its name, company, address or domain (e.g. example.tech); default the one it arrived in
       about: "str?"            # words of its subject, when the sender wrote more than once
       pick: "int?"             # the choice the owner picked, from a previous answer's choices
     write: true

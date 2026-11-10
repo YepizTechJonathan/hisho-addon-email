@@ -88,7 +88,7 @@ def claude(prompt):
                                    if label == "Customer request" else "Zoho update"}))
         return "\n".join(out)
     if prompt.startswith("You draft a reply"):
-        return json.dumps({"subject": "x", "body": "Hi Jesús,\nYes, I'll add it this week.\n\nAlex Rivera\nAcme"})
+        return json.dumps({"subject": "x", "body": "Hi Renée,\nYes, I'll add it this week.\n\nAlex Rivera\nAcme"})
     if prompt.startswith("You sort email the owner doesn't need"):
         return "\n".join(json.dumps({"id": n, "group": "Newsletters", "about": "update"}) for n in range(1, 10))
     return ""
@@ -156,7 +156,7 @@ def test_cleanup_cards_are_per_folder_and_run_in_that_folder(monkeypatch):
     poll(Box())
     card = next(c for c in mod.proposals({"yt": YT}, Ctx()) if c["action"]["type"] == "email.trash")
     pay = card["action"]["payload"]
-    assert pay["folder"] == "Newsletter" and [it["uid"] for it in pay["items"]] == [5]      # Jesús: never (customer)
+    assert pay["folder"] == "Newsletter" and [it["uid"] for it in pay["items"]] == [5]      # Renée: never (customer)
     assert card["title"].startswith("Clean up Acme Newsletter folder")
     seen = {}
 

@@ -1,9 +1,14 @@
 # Changelog
 
+## 0.13.1
+
+- No personal names or addresses again (0.13.0 brought some back): made-up examples in the tests, notes and the
+  draft tools' descriptions. Nothing else changed.
+
 ## 0.13.0
 
-- Ask Hisho drafts email: the dashboard's chat (and Hisho's MCP) gets two tools, `draft_reply` (find an email by who sent it, in any mailbox, and answer it as the owner says, from the mailbox they name, threaded) and `draft_email` (a new one, to addresses the owner gave). The draft is saved in the sending mailbox's own Drafts folder (`drafts.py`, the only code that may APPEND there, flagged \\Draft; `drafts_folder` overrides the folder), where the owner opens it, edits it and presses Send. Nothing is sent. Before, the chat had no way to reach email at all and could only say so (Jonathan, 2026-11-07: "I want it on Zoho as a draft").
-- The chat's Claude never sees mail: the add-on finds the email and a Claude with no tools writes the reply (the sender's text fenced as data, the owner's words as the ask); Hisho Core passes back only ok / message / to / send_from / choices (address, mailbox, time). A body Hisho had let go after sorting is read again read-only (EXAMINE + BODY.PEEK). Senders are matched without accents ("Jesus Juarez" finds "Jesús Juárez").
+- Ask Hisho drafts email: the dashboard's chat (and Hisho's MCP) gets two tools, `draft_reply` (find an email by who sent it, in any mailbox, and answer it as the owner says, from the mailbox they name, threaded) and `draft_email` (a new one, to addresses the owner gave). The draft is saved in the sending mailbox's own Drafts folder (`drafts.py`, the only code that may APPEND there, flagged \\Draft; `drafts_folder` overrides the folder), where the owner opens it, edits it and presses Send. Nothing is sent. Before, the chat had no way to reach email at all and could only say so (the owner, 2026-11-07: "I want it on Zoho as a draft").
+- The chat's Claude never sees mail: the add-on finds the email and a Claude with no tools writes the reply (the sender's text fenced as data, the owner's words as the ask); Hisho Core passes back only ok / message / to / send_from / choices (address, mailbox, time). A body Hisho had let go after sorting is read again read-only (EXAMINE + BODY.PEEK). Senders are matched without accents ("Renee Cote" finds "Renée Côté").
 - The Email page's New email still drafts onto the Approvals page, unchanged.
 
 ## 0.12.6

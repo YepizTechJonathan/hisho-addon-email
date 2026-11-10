@@ -2168,7 +2168,7 @@ def save_draft(name: str, entry: dict[str, Any], c: dict[str, Any], ctx: Any, *,
 #
 # Ask Hisho's Claude holds Hisho's tools, so it never reads mail: these tools find the email here, have Claude
 # with NO tools write the draft (the sender's text fenced as data, the owner's words as the ask), and save it in the
-# sending mailbox's own Drafts folder (drafts.py; Jonathan 2026-11-07: "I want it on Zoho as a draft"). What goes
+# sending mailbox's own Drafts folder (drafts.py; the owner, 2026-11-07: "I want it on Zoho as a draft"). What goes
 # back is this add-on's own sentence, the recipient and, when more than one email fits, address / company / time to
 # choose from. Nothing is sent: the owner opens the draft in their mail and presses Send there.
 
@@ -2177,7 +2177,7 @@ _MARKS = re.compile(r"[\u0300-\u036f]")
 
 
 def _fold(text: Any) -> str:
-    """Lower case without accents: "Jesús Juárez" is found as "jesus juarez"."""
+    """Lower case without accents: "Renée Côté" is found as "renee cote"."""
     return _MARKS.sub("", unicodedata.normalize("NFKD", str(text or ""))).lower()
 
 
