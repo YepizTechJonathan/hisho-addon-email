@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.14.1
+
+- The open list is the review's call, not the labeller's: on real mail the labeller's "needs you" also caught
+  statements, order notices, recruiting newsletters and reminders for dates already past. An email the labeller says
+  needs the owner is listed at once as a first guess and reviewed at the next poll (its body read again, read only);
+  the review's verdict, with what to do, replaces the guess for good. A batch Claude can't answer is tried again
+  (3 times at most).
+
 ## 0.14.0
 
 - Mail that waits on the owner stays in front of them, whatever its age. Before, an email was only ever looked at if it

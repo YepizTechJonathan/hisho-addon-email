@@ -229,3 +229,22 @@ def test_parse_review_takes_only_what_it_asked_for():
     assert got[4]["needs"] is False
 
 
+
+
+def test_the_labellers_needs_you_is_a_first_guess_the_review_decides():
+    box, ask = reviewed()
+    box.folders["INBOX"][7] = mail("Your mortgage statement is ready", "Lender <noreply@lender.example>",
+                                   "Tue, 11 Nov 2026 09:00:00 -0800", "<m@x>", body="Autopay is on. Nothing to do.")
+    st = mod.load_state("home")
+    st["messages"].append({"uid": 7, "from_name": "Lender", "from_addr": "noreply@lender.example", "tries": 1,
+                           "subject": "Your mortgage statement is ready", "received": "2026-11-11T17:00:00+00:00",
+                           "message_id": "<m@x>", "label": "Bill or invoice", "summary": "Mortgage statement ready"})
+    st["review"]["present"].append(7)   # as the poll that labelled it saw
+    mod.save_state("home", st)
+    assert "Your mortgage statement is ready" in [v["subject"] for v in mod.open_items("home", ENTRY)]   # listed at once
+    VERDICTS["Your mortgage statement is ready"] = {"needs": False}
+    poll(box, ask, now=NOW + dt.timedelta(minutes=10))
+    assert "Autopay is on" in [p for p in ask.seen if p.startswith("You look through email")][-1]
+    assert "Your mortgage statement is ready" not in [v["subject"] for v in mod.open_items("home", ENTRY)]
+    poll(box, ask, now=NOW + dt.timedelta(minutes=15))   # the labeller's guess never comes back over the review
+    assert "Your mortgage statement is ready" not in [v["subject"] for v in mod.open_items("home", ENTRY)]

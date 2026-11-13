@@ -194,8 +194,9 @@ def test_first_look_reads_two_days_and_later_only_whats_new():
     assert st["messages"][1]["pressing"] == "client problem" and st["messages"][1]["body"]   # kept: it gets a draft
     fake.sent.clear()
     st = run(fake, labeller([]))                                     # nothing new: no FETCH at all
-    # inbox, what's still in it (the open list), Sent, Sent's replies (the open list); no FETCH
-    assert [c[1] for c in fake.sent if c[0] == "UID"] == ["SEARCH", "SEARCH", "SEARCH", "SEARCH"] and len(st["messages"]) == 2
+    # inbox, what's still in it (the open list) and the review reading the email said to need him (this labeller
+    # can't answer it: tried again later), Sent, Sent's replies (the open list); nothing new is fetched
+    assert [c[1] for c in fake.sent if c[0] == "UID"] == ["SEARCH", "SEARCH", "FETCH", "SEARCH", "SEARCH"] and len(st["messages"]) == 2
 
 
 def test_a_new_uidvalidity_starts_over():

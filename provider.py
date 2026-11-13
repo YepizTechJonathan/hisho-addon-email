@@ -951,15 +951,26 @@ words, naming the person or company>", "by": "<YYYY-MM-DD if the email names a d
 {messages}"""
 
 
+def _reviewed(review: dict[str, Any], uid: Any) -> bool:
+    """Reviewed already, or Claude couldn't answer for it TRIES times."""
+    return (((review.get("seen") or {}).get(str(uid)) or {}).get("how") == "review"
+            or int((review.get("tries") or {}).get(str(uid)) or 0) >= TRIES)
+
+
 def review_candidates(clean: dict[str, Any], review: dict[str, Any], kept: list[dict[str, Any]],
                       limit: int | None = None) -> list[dict[str, Any]]:
-    """Inbox emails not yet reviewed, newest first: still in the inbox, not clutter by the header sort, not a job
-    board's alert, and not one the labeller is looking after (mail of the last two weeks)."""
-    present = {int(u) for u in review.get("present") or clean.get("present") or []}
-    seen, labelled = review.get("seen") or {}, {m["uid"] for m in kept}
-    out = [c for k, c in (clean.get("cats") or {}).items()
-           if int(k) in present and k not in seen and int(k) not in labelled and c.get("group") in REVIEW_GROUPS
-           and not (c.get("group") == "Jobs" and job_bot(c.get("from_addr")))]
+    """Inbox emails not yet reviewed, newest first: the ones the labeller (mail of the last two weeks) said need the
+    owner, and the older ones still in the inbox that the header sort didn't call clutter and aren't a job board's
+    alert. The labeller's "needs you" is only a first guess: the review, which says what to do, decides."""
+    present = {int(u) for u in (review["present"] if "present" in review else clean.get("present") or [])}
+    labelled = {m["uid"] for m in kept}
+    out = [{"uid": m["uid"], "from": _sender(m), "from_addr": m.get("from_addr") or "", "subject": m.get("subject") or "",
+            "received": m["received"], "message_id": m.get("message_id") or "", "labelled": True}
+           for m in kept if m["uid"] in present and m.get("label") and not m.get("junk") and not m.get("answered") and not m.get("scam")
+           and (kind(m) in ACT_VERBS or m.get("pressing")) and not _reviewed(review, m["uid"])]
+    out += [c for k, c in (clean.get("cats") or {}).items()
+            if int(k) in present and int(k) not in labelled and not _reviewed(review, k)
+            and c.get("group") in REVIEW_GROUPS and not (c.get("group") == "Jobs" and job_bot(c.get("from_addr")))]
     return sorted(out, key=lambda c: str(c.get("received") or ""), reverse=True)[:limit or REVIEW_BATCH * REVIEW_CALLS]
 
 
@@ -1021,10 +1032,12 @@ def parse_review(text: str, ids: list[int]) -> dict[int, dict[str, Any]]:
 
 
 def review_mail(entry: dict[str, Any], todo: list[dict[str, Any]], now: dt.datetime,
-                ask: Callable[[str], str] | None = None) -> dict[str, dict[str, Any]]:
-    """{uid (str): verdict} for ``todo`` (header facts + ``body``), REVIEW_BATCH per Claude call. A batch Claude
-    couldn't answer is left out (tried again at the next poll); an email it skipped counts as not needing the owner."""
+                ask: Callable[[str], str] | None = None) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    """({uid (str): verdict}, uids Claude gave no answer for) for ``todo`` (header facts + ``body``), REVIEW_BATCH per
+    Claude call. A batch Claude couldn't answer at all is tried again at the next poll; an email it skipped in a batch
+    it did answer counts as not needing the owner."""
     out: dict[str, dict[str, Any]] = {}
+    failed: list[str] = []
     tz = _tz()
     who = "a personal mailbox" if is_personal(entry) else f"the business mailbox of {entry.get('company') or 'their company'}"
     for i in range(0, len(todo), REVIEW_BATCH):
@@ -1045,23 +1058,26 @@ def review_mail(entry: dict[str, Any], todo: list[dict[str, Any]], now: dt.datet
         try:
             got = parse_review((ask or _claude)(prompt), list(range(1, len(batch) + 1)))
         except Exception:  # noqa: BLE001 -- Claude away: this batch is tried again at the next poll
+            got = {}
+        if not got:
+            failed += [str(c["uid"]) for c in batch]
             continue
         for n, c in enumerate(batch, 1):
             v = got.get(n) or {"needs": False, "do": "", "what": "", "by": ""}
             out[str(c["uid"])] = {**{k: c.get(k) for k in ("uid", "from", "from_addr", "subject", "received",
                                                            "message_id")},
                                   **v, "how": "review", "at": now.isoformat(timespec="seconds")}
-    return out
+    return out, failed
 
 
 def pin_labelled(review: dict[str, Any], kept: list[dict[str, Any]], now: dt.datetime) -> dict[str, Any]:
-    """The labeller's verdicts on inbox mail, kept in the review: an email that needs the owner stays on the open list
-    after it leaves the labeller's two weeks. The labeller read the whole email when it came, so while it keeps the
-    email its verdict wins, and a later one (answered, sorted again) replaces the earlier."""
+    """The labeller's verdicts on inbox mail, a first guess until the review has looked (the next poll): what it said
+    needs the owner is listed at once. A later label (answered, sorted again) replaces the earlier guess; the review's
+    verdict is never replaced."""
     review = dict(review)
     seen = dict(review.get("seen") or {})
     for m in kept:
-        if m.get("junk") or not m.get("label"):
+        if m.get("junk") or not m.get("label") or (seen.get(str(m["uid"])) or {}).get("how") == "review":
             continue
         k = kind(m)
         needs = (k in ACT_VERBS or bool(m.get("pressing"))) and not m.get("answered") and not m.get("scam")
@@ -1298,7 +1314,11 @@ def _poll_one(name: str, entry: dict[str, Any], ctx: Any, *, now: dt.datetime | 
     if reviewing:
         review = pin_labelled(review, kept, now)
         if backlog:
-            review["seen"] = {**review["seen"], **review_mail(entry, backlog, now, ask)}
+            got, failed = review_mail(entry, backlog, now, ask)
+            tries = dict(review.get("tries") or {})
+            for uid in failed:
+                tries[uid] = int(tries.get(uid) or 0) + 1
+            review.update(seen={**review["seen"], **got}, tries=dict(list(tries.items())[-REVIEW_KEEP:]))
         state["review"] = review
     cutoff = (now - dt.timedelta(days=KEEP_DAYS)).isoformat()
     kept = [m for m in kept if m["received"] >= cutoff][-KEEP_MAX:]
