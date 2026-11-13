@@ -393,3 +393,18 @@ def test_a_fake_job_offer_goes_after_a_day_and_old_job_sorts_are_redone(monkeypa
     poll(box, ask)
     clean = mod.load_state("pp")["cleanup"]
     assert clean["sort_version"] == mod.SORT_VERSION and clean["cats"]["1"]["group"] == "Newsletters"   # sorted again
+
+
+def test_a_second_card_the_same_day_has_its_own_key(monkeypatch):
+    # 2026-11-13: "Clean up now" late in the evening made a card under the day's key, which the Approvals list
+    # already had (done): it never showed
+    monkeypatch.setattr(mod, "waiting_cards", lambda: set())
+    box = Box(INBOX, SENT)
+    poll(box, sorter(GROUPS))
+    (first,) = mod.load_state("pp")["cleanup"]["cards"]
+    box.folders["INBOX"][9] = mail("More news", sender="Daily <news@daily.com>", date="Fri, 23 Oct 2026 08:00:00 -0700", bulk=True)
+    st = mod.load_state("pp")
+    st["cleanup"]["force"] = True
+    mod.save_state("pp", st)
+    cards = poll(box, sorter({**GROUPS, "More news": ("Newsletters", "news")}), now=NOW + dt.timedelta(hours=1))["cleanup"]["cards"]
+    assert sorted(cards) == [first, first + "-2"] and [i["uid"] for i in cards[first + "-2"]["items"]] == [9]

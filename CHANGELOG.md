@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.16.2
+
+- A second clean-up card the same day ("Clean up now") gets a key of its own (`<day>-2`): it had reused the day's key,
+  which the Approvals list already had, so the card never showed.
+
 ## 0.16.1
 
 - Fake job offers are clean-up, not job mail: the header sort puts them in Junk ("you're hired" with no interview,

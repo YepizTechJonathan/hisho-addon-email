@@ -588,7 +588,11 @@ def make_cleanup_card(name: str, entry: dict[str, Any], clean: dict[str, Any], k
     cards = {k: v for k, v in (clean.get("cards") or {}).items()
              if k in open_cards or v["at"] >= (now - dt.timedelta(days=CLEAN_CARD_DAYS)).isoformat()}
     if items and not open_cards:
-        cards[f"cleanup:{name}:{validity}:{day}"] = {"at": now.isoformat(timespec="seconds"), "items": items}
+        key, n = f"cleanup:{name}:{validity}:{day}", 1
+        while key in (clean.get("cards") or {}):   # a second card the same day ("Clean up now"): a key of its own,
+            n += 1                                   # or the Approvals list takes it for the first and drops it
+            key = f"cleanup:{name}:{validity}:{day}-{n}"
+        cards[key] = {"at": now.isoformat(timespec="seconds"), "items": items}
         clean["offered"] = sorted(offered | {it["uid"] for it in items})[-20000:]
     clean["cards"] = cards
     return clean
