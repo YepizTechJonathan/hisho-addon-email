@@ -500,6 +500,8 @@ def never_clean(c: dict[str, Any], m: dict[str, Any] | None, clean: dict[str, An
             return m["label"]
         if m.get("pressing"):
             return "pressing"
+    if c.get("labels"):
+        return "also in " + ", ".join(c["labels"][:3])   # Gmail: Trash would take it out of these too
     if c.get("from_addr") and c["from_addr"] in set(clean.get("contacts") or []):
         return "someone you wrote to"
     if c.get("from_addr") and c["from_addr"] in set(clean.get("keep_senders") or []):
@@ -520,7 +522,7 @@ def waiting_cards() -> set[str] | None:
 
 def make_cleanup_card(name: str, entry: dict[str, Any], clean: dict[str, Any], kept: list[dict[str, Any]],
                       validity: str, now: dt.datetime, junk: bool = False,
-                      waiting: set[str] | None = None) -> dict[str, Any]:
+                      waiting: set[str] | None = None, skip_ids: set[str] | None = None) -> dict[str, Any]:
     """Today's card: every email that may be cleaned, is old enough, is still in the inbox and wasn't offered.
     One card per folder: while an earlier one still waits on the Approvals list (``waiting``), it stays (whatever
     its age) and no new one is made; what came in meanwhile is offered on the next card, after that one is decided."""
@@ -535,6 +537,8 @@ def make_cleanup_card(name: str, entry: dict[str, Any], clean: dict[str, Any], k
         uid = int(key)
         if uid not in present or uid in offered or never_clean(c, by_uid.get(uid), clean) or not c.get("received"):
             continue
+        if c.get("message_id") and c["message_id"] in (skip_ids or set()):
+            continue   # also in the inbox: the inbox's card offers it
         age = NOTICE_MIN_DAYS if c["group"] == "Notifications" else CLEAN_MIN_DAYS
         if c["received"] > (now - dt.timedelta(days=age)).isoformat():
             continue
@@ -1369,19 +1373,25 @@ def _poll_one(name: str, entry: dict[str, Any], ctx: Any, *, now: dt.datetime | 
 DEFAULT_FOLDERS = "all"   # every folder LIST shows (Archive, Spam, Zoho's smart filters, your own), but those below
 #: never read as mail: Trash and Drafts (and templates); Sent is read only to spot answered mail (``read_sent``);
 #: \All / \Flagged are views of other folders (Gmail's All Mail), not mail of their own
-SKIP_USES = ("\\trash", "\\drafts", "\\sent", "\\all", "\\flagged", "\\important")   # Gmail's Important: a view too
+SKIP_USES = ("\\trash", "\\drafts", "\\sent", "\\all", "\\flagged", "\\important")   # Important: a view (VIEW_USES)
 SKIP_NAMES = ("trash", "drafts", "draft", "templates", "sent", "sent items", "sent mail", "sent messages",
-              "deleted items", "deleted messages", "outbox", "[gmail]/all mail", "[gmail]/starred")
+              "deleted items", "deleted messages", "outbox", "[gmail]/all mail", "[gmail]/starred",
+              "[gmail]/important", "[google mail]/important")
 JUNK_NAMES = ("spam", "junk", "junk e-mail", "junk email", "bulk mail", "[gmail]/spam")
 #: clean-up stays where it always was: the inbox and Zoho's smart-filter folders. Archive, Payments (bills and
 #: receipts), Spam and your own folders are read but never offered for clean-up.
 CLEAN_FOLDERS = ("inbox", "newsletter", "newsletters", "notification", "notifications")
+#: Gmail's Important (0.15.0): a label view, not a folder, so it is never read like one (its mail is in the inbox or
+#: archived); clean-up only: headers sorted, cards for what isn't also in the inbox (that is the inbox card's).
+VIEW_USES = ("\\important",)
+VIEW_NAMES = ("[gmail]/important", "[google mail]/important")
 
 
 def cleanable(folder: str, junk: bool = False) -> bool:
     """Whether clean-up may offer this folder's mail: the inbox, Zoho's smart-filter folders, and Spam (0.12.2:
     spam should go, not sit there); never Archive, Payments or your own folders."""
-    return junk or str(folder or "INBOX").lower() in CLEAN_FOLDERS or str(folder or "").lower() in JUNK_NAMES
+    name = str(folder or "INBOX").lower()
+    return junk or name in CLEAN_FOLDERS or name in JUNK_NAMES or name in VIEW_NAMES
 
 
 class _Shared:
@@ -1451,9 +1461,76 @@ def resolve_folders(conn: Any, wanted: list[str], entry: dict[str, Any] | None =
 
 
 def streams(name: str, entry: dict[str, Any]) -> list[tuple[str, str]]:
-    """(state name, folder) for the inbox and every extra folder the last poll found."""
-    found = load_state(name).get("folders_found") or []
+    """(state name, folder) for the inbox, every extra folder the last poll found and the clean-up-only views."""
+    st = load_state(name)
+    found = (st.get("folders_found") or []) + (st.get("folders_views") or [])
     return [(name, str(entry.get("folder") or "INBOX"))] + [(stream_name(name, f), f) for f in found]
+
+
+def resolve_views(listed: dict[str, str], wanted: list[str]) -> list[str]:
+    """Gmail's Important (by its special-use flag or name), when every folder is read or it is named."""
+    names = {w.lower() for w in wanted}
+    return [n for n, flags in listed.items()
+            if (any(u in flags for u in VIEW_USES) or n.lower() in VIEW_NAMES)
+            and (names == {"all"} or n.lower() in names)]
+
+
+def gmail_labels(conn: Any, uids: list[int]) -> dict[int, list[str]]:
+    """Each message's other Gmail labels (X-GM-LABELS, a read): \\Inbox, \\Sent, \\Starred, your own labels. In
+    Gmail, Trash takes a message out of every label, so one with any label is never offered from a view."""
+    out: dict[int, list[str]] = {}
+    for i in range(0, len(uids), 500):
+        typ, data = conn.uid("FETCH", ",".join(str(u) for u in uids[i:i + 500]), "(UID X-GM-LABELS)")
+        for part in (data or []) if typ == "OK" else []:
+            head = part[0] if isinstance(part, tuple) else part
+            if not isinstance(head, bytes):
+                continue
+            m = re.search(rb"UID (\d+)", head)
+            if not m:
+                continue
+            got = re.search(rb"X-GM-LABELS \((.*?)\)", head)
+            if isinstance(part, tuple) or not got:
+                out[int(m.group(1))] = ["?"]           # a label in a literal (non-ASCII name): treated as labelled
+                continue
+            names = [x.strip(b'"').decode("utf-8", "replace") for x in re.findall(rb'"[^"]*"|\S+', got.group(1))]
+            out[int(m.group(1))] = [n for n in names if n.lower() not in ("\\\\important", "\\important")][:10]
+    return out
+
+
+def poll_view(sname: str, entry: dict[str, Any], conn: Any, now: dt.datetime, inbox: dict[str, Any],
+              ask: Callable[[str], str] | None = None) -> dict[str, Any]:
+    """A clean-up-only view (Gmail's Important): read only, headers only, no labels, drafts or cards but clean-up.
+    Its first scan goes on every poll until the whole view is sorted; a card is made whenever none of its own waits,
+    never with an email that is also in the inbox (``inbox``: the inbox's state)."""
+    st = load_state(sname)
+    clean = st.get("cleanup") or {}
+    folder = str(entry["folder"])
+    pending = set(map(str, clean.get("present") or [])) - set(clean.get("cats") or {})
+    if _cleanup_due(clean, now) or pending:
+        typ, data = conn.select(mailbox(folder), readonly=True)          # EXAMINE
+        if typ != "OK":
+            st.update(status="error", error=f"can't open {folder}: {data!r}"[:200])
+            save_state(sname, st)
+            return st
+        validity = str((conn.response("UIDVALIDITY")[1] or [b""])[0] or b"", "ascii", "replace")
+        clean = scan_inbox(conn, validity, clean)
+        labels = gmail_labels(conn, [x["uid"] for x in clean.get("pending") or []])
+        for x in clean.get("pending") or []:
+            x["labels"] = labels.get(x["uid"], ["?"])     # not answered: kept, as if it had a label
+        own = inbox.get("cleanup") or {}
+        clean["contacts"] = own.get("contacts") or []                   # the inbox's scan read the Sent folder
+        clean["keep_senders"] = sorted(set(clean.get("keep_senders") or []) | set(own.get("keep_senders") or []))
+        clean = sort_for_cleanup(entry, clean, [], now, ask)
+    in_inbox = {c.get("message_id") for u, c in ((inbox.get("cleanup") or {}).get("cats") or {}).items()
+                if int(u) in set((inbox.get("cleanup") or {}).get("present") or []) and c.get("message_id")}
+    in_inbox |= {m.get("message_id") for m in inbox.get("messages") or [] if m.get("message_id")}
+    if clean.get("validity"):
+        clean = make_cleanup_card(sname, entry, clean, [], str(clean["validity"]), now,
+                                  waiting=waiting_cards(), skip_ids=in_inbox)
+    st.update(cleanup=clean, uidvalidity=clean.get("validity"), status="ok", error="",
+              checked=now.isoformat(timespec="seconds"))
+    save_state(sname, st)
+    return st
 
 
 def poll(name: str, entry: dict[str, Any], ctx: Any, *, now: dt.datetime | None = None,
@@ -1479,7 +1556,15 @@ def poll(name: str, entry: dict[str, Any], ctx: Any, *, now: dt.datetime | None 
             junk = [f for f in found if is_junk(f, listed.get(f, ""))]
             st = load_state(name)
             st["folders_found"], st["folders_junk"] = found, junk
+            st["folders_views"] = [v for v in resolve_views(listed, wanted_folders(entry)) if v not in found]
             save_state(name, st)
+            for v in st["folders_views"]:
+                try:
+                    poll_view(stream_name(name, v), {**entry, "folder": v}, held["conn"], now, st, ask)
+                except Exception as exc:  # noqa: BLE001 -- a view's trouble never stops the folders
+                    vst = load_state(stream_name(name, v))
+                    vst.update(status="error", error=str(exc)[:200])
+                    save_state(stream_name(name, v), vst)
             for f in found:
                 sname = stream_name(name, f)
                 _poll_one(sname, {**entry, "folder": f}, ctx, now=now, ask=ask, connect_fn=opener,

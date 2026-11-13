@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.15.0
+
+- Gmail's Important gets clean-up cards too (it was skipped as a label view). It stays a view: read only, headers
+  only, never labelled, drafted or carded but clean-up. An email that has any other Gmail label (Inbox, Sent,
+  Starred, your own labels) is never offered from it, since Gmail's Trash takes a message out of every label; one also
+  in the inbox is the inbox card's. Its first sort runs on every check until the whole view is sorted, and a new card
+  comes whenever the last one is decided. On 01yepiz: 3,676 of 4,004 emails had no other label.
+
 ## 0.14.4
 
 - One clean-up card per folder: while one waits on the Approvals list (any age), no new one is made; what comes in

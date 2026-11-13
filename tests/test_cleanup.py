@@ -307,3 +307,45 @@ def test_mailbox_changes_live_only_in_cleanup_py():
     for word in ('uid("MOVE"', 'uid("COPY"', 'uid("STORE"', 'uid("EXPUNGE"', ".expunge(", "Deleted"):
         assert word not in prov, word
     assert "PERMANENT" not in (HERE / "cleanup.py").read_text().upper().replace("PERMANENT DELETION OF ANY KIND", "")
+
+
+# ── 0.15.0: Gmail's Important, clean-up only ──────────────────────────────
+
+class GmailBox(Box):
+    """Box with Gmail's LIST flags and X-GM-LABELS."""
+    def __init__(self, inbox, important, labels, sent=None):
+        super().__init__(inbox, sent)
+        self.folders["[Gmail]/Important"] = dict(important)
+        self.labels = labels
+
+    def list(self):
+        return "OK", [b'(\\HasNoChildren) "/" "INBOX"', b'(\\HasNoChildren \\Sent) "/" "Sent"',
+                      b'(\\HasNoChildren \\Important) "/" "[Gmail]/Important"']
+
+    def uid(self, command, *args):
+        if command == "FETCH" and "X-GM-LABELS" in args[1]:
+            self._cmd("UID", command, *args)
+            return "OK", [f'{u} (X-GM-LABELS ({" ".join(self.labels.get(u, []))}) UID {u})'.encode()
+                          for u in (int(x) for x in args[0].split(","))]
+        return super().uid(command, *args)
+
+
+def test_gmail_important_gets_clean_up_cards_only_for_mail_in_no_other_label(monkeypatch):
+    monkeypatch.setattr(mod, "waiting_cards", lambda: set())
+    g = {**PP, "folders": "all"}
+    inbox = {1: INBOX[1]}                                          # also in Important (same Message-ID)
+    important = {11: INBOX[1], 12: INBOX[2], 13: INBOX[3], 14: INBOX[4], 15: INBOX[5]}
+    labels = {11: ['"\\\\Inbox"'], 13: ['"Purchased/Receipts"'], 14: ['"\\\\Sent"']}
+    box = GmailBox(inbox, important, labels, SENT)
+    mod.poll("pp", g, Ctx(), now=NOW, ask=sorter(GROUPS), connect_fn=lambda e, p: box)
+    st = mod.load_state("pp")
+    assert st["folders_views"] == ["[Gmail]/Important"] and "[Gmail]/Important" not in st["folders_found"]
+    view = mod.load_state("pp--gmail-important")
+    assert view.get("messages") in (None, [])                      # never labelled, drafted or carded but clean-up
+    cards = [c for c in mod.proposals({"pp": g}, Ctx()) if c["action"]["type"] == "email.trash"]
+    imp = [c for c in cards if c["action"]["payload"]["folder"] == "[Gmail]/Important"]
+    assert [[it["uid"] for it in c["action"]["payload"]["items"]] for c in imp] == [[12, 15]]
+    assert imp[0]["title"].startswith("Clean up Globex [Gmail]/Important folder: 2 emails")
+    assert mod.cleanable("[Gmail]/Important")
+    # read only throughout: EXAMINE and fetches, nothing that changes the mailbox
+    assert not [c for c in box.cmds if c[0] in ("SELECT", "STORE", "EXPUNGE", "COPY", "MOVE")]
