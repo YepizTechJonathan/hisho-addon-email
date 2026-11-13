@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.18.0
+
+- `gov_contractor: true` for a mailbox whose address is public on SAM.gov: the sort is told what government-contractor
+  scams look like (paid SAM.gov "renewals" from anyone but sam.gov or gsa.gov, a "Federal Trademark Registry" or
+  trademark notice from anyone but uspto.gov, CAGE/UEI "verification" from a non-.gov address, posters and
+  certificates sold as required) and what real leads look like (.gov/.mil senders, contracting officers, RFQs and
+  sources-sought, primes asking for a quote, APEX Accelerators): a lead it can't judge is a Customer request with
+  "check the sender first", never Junk.
+- A business mailbox's sort may flag any email as a likely scam (before, only a personal mailbox's job mail): shown
+  with the scam warning, never pushed, never on the needs-you list, offered for clean-up after a day.
+- A sender at a .gov or .mil address that passed Zoho's sender checks is never Junk or a scam (a do-not-reply notice
+  becomes Newsletter, anything else Needs reply); a "legal notice" from a free mail address (Gmail, Outlook...) is
+  never pushed.
+- The header sort's Junk names offers to register or renew with SAM.gov or a "federal registry" from a non-.gov sender.
+
 ## 0.17.0
 
 - Archived mail is the owner's to keep: Gmail's Important (mostly archived mail) is no longer cleaned up unless named in

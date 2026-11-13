@@ -77,6 +77,7 @@ mailbox shows "waiting for app password": no error and no alert.
   - `folders` (str, optional)
   - `keep_words` (str, optional)
   - `alerts` (bool, optional)
+  - `gov_contractor` (bool, optional)
   - `personal` (bool, optional)
   - `drafts` (bool, optional)
   - `request_form` (str, optional)

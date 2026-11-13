@@ -257,6 +257,36 @@ def test_parse_labels_keeps_only_known_ids_labels_and_pressing_kinds():
                    4: {"label": "Deadline", "summary": "SAM renewal tomorrow", "pressing": "deadline 48h"}}
 
 
+def test_a_government_contractor_sort_knows_fake_registries_and_never_junks_a_real_agency():
+    seen = {}
+
+    def ask(prompt):
+        seen["prompt"] = prompt
+        return "\n".join(json.dumps(r) for r in [
+            {"id": 1, "label": "Deadline", "summary": "SAM renewal for $499", "pressing": "deadline 48h", "scam": True},
+            {"id": 2, "label": "Junk", "summary": "CAGE review", "pressing": "", "scam": True},
+            {"id": 3, "label": "Junk", "summary": "SAM notice", "pressing": ""},
+            {"id": 4, "label": "Deadline", "summary": "Federal Trademark Registry", "pressing": "legal notice"},
+            {"id": 5, "label": "Customer request", "summary": "RFQ from a prime; check the sender", "pressing": ""}])
+    msgs = [{"uid": 11, "from_addr": "renewals@sam-registration.example", "subject": "SAM expiring", "body": "pay"},
+            {"uid": 12, "from_addr": "cagereview@dla.mil", "subject": "CAGE", "body": "b", "auth_ok": True},
+            {"uid": 13, "from_addr": "donotreply@sam.gov", "subject": "Registration", "body": "b", "auth_ok": True},
+            {"uid": 14, "from_addr": "registry2345@gmail.com", "subject": "Trademark", "body": "b", "auth_ok": True},
+            {"uid": 15, "from_addr": "bids@prime.example", "subject": "RFQ", "body": "b"}]
+    got = mod.classify("PatriotPoint", msgs, NOW, ask, gov=True)
+    assert "SAM.gov" in seen["prompt"] and "uspto.gov" in seen["prompt"] and "APEX Accelerator" in seen["prompt"]
+    assert got[11]["scam"] is True and got[11]["pressing"] == ""            # a scam is never pushed
+    assert got[12]["label"] == "Needs reply" and "scam" not in got[12]      # a verified .mil sender is never junk
+    assert got[13]["label"] == "Newsletter"                                 # ...an automated .gov one is kept as a notice
+    assert got[14]["pressing"] == ""                                        # no agency writes from a free address
+    assert got[15]["label"] == "Customer request"
+    fake_gov = {"uid": 16, "from_addr": "notice@sam.gov", "subject": "x", "body": "b", "auth_ok": False}
+    assert mod.classify("PatriotPoint", [fake_gov], NOW, labeller([{"id": 1, "label": "Junk", "summary": "spoof",
+                                                                     "scam": True}]), gov=True)[16]["scam"] is True
+    plain = mod.classify("Acme", msgs[:1], NOW, lambda p: seen.update(plain=p) or "")
+    assert "uspto.gov" not in seen["plain"] and plain == {}                 # only a mailbox marked gov_contractor
+
+
 def test_an_email_cannot_break_out_of_its_fence():
     ask = labeller([{"id": 1, "label": "Junk", "summary": "phishing"}])
     hostile = {"uid": 4, "from_name": "x", "from_addr": "x@y", "subject": "Hi", "received": NOW.isoformat(),
