@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.14.2
+
+- A thread or a run of the same notice (three reminders of one request, a support case's replies) is one item on the
+  open list, the newest, with how many emails it covers; Done / Not needed clears them all. On real mail one overdue
+  invoice had been six lines.
+
 ## 0.14.1
 
 - The open list is the review's call, not the labeller's: on real mail the labeller's "needs you" also caught

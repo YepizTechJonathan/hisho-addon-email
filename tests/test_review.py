@@ -248,3 +248,18 @@ def test_the_labellers_needs_you_is_a_first_guess_the_review_decides():
     assert "Your mortgage statement is ready" not in [v["subject"] for v in mod.open_items("home", ENTRY)]
     poll(box, ask, now=NOW + dt.timedelta(minutes=15))   # the labeller's guess never comes back over the review
     assert "Your mortgage statement is ready" not in [v["subject"] for v in mod.open_items("home", ENTRY)]
+
+
+def test_a_run_of_the_same_email_is_one_item_and_done_clears_it_all():
+    box = Box()
+    for uid, day in ((8, "Mon, 20 Oct 2026"), (9, "Tue, 21 Oct 2026")):
+        box.folders["INBOX"][uid] = mail("Your education progress", "Counselor <office@benefits.example>",
+                                         f"{day} 09:00:00 -0700", f"<e{uid}@x>", body="Please send your progress report.")
+    GROUPS["Your education progress"] = "Keep"
+    VERDICTS["Your education progress"] = {"needs": True, "do": "Reply", "what": "Send the counselor your progress report"}
+    reviewed(box)
+    runs = [v for v in mod.open_items("home", ENTRY) if v["subject"] == "Your education progress"]
+    assert len(runs) == 1 and runs[0]["uid"] == 9 and runs[0]["also"] == ["8"]
+    assert any("Your education progress (2 emails)" in l for l in mod.morning({"home": ENTRY}, Ctx())["lines"])
+    assert mod.act({"home": ENTRY}, Ctx(), "home", "open-9", "done")["ok"]
+    assert "Your education progress" not in [v["subject"] for v in mod.open_items("home", ENTRY)]

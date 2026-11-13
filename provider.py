@@ -1115,6 +1115,15 @@ def open_items(name: str, entry: dict[str, Any], st: dict[str, Any] | None = Non
     threads = list(review.get("reply_threads") or []) + list((st.get("sent") or {}).get("threads") or [])
     out = [v for k, v in seen.items()
            if v.get("needs") and int(k) in present and k not in done and not _replied(v, refs, threads)]
+    # a thread or a run of the same notice (three reminders of one request) is one item: the newest, with the rest
+    threads_of: dict[tuple[str, str], dict[str, Any]] = {}
+    for v in sorted(out, key=lambda v: str(v.get("received") or ""), reverse=True):
+        key = (str(v.get("from_addr") or "").lower(), norm_subject(v.get("subject")))
+        if key in threads_of:
+            threads_of[key]["also"].append(str(v["uid"]))
+        else:
+            threads_of[key] = {**v, "also": []}
+    out = list(threads_of.values())
     return sorted(sorted(out, key=lambda v: str(v.get("received") or ""), reverse=True),
                   key=lambda v: (not v.get("pressing"), not v.get("by"), str(v.get("by") or "")))
 
@@ -1142,7 +1151,8 @@ def open_line(v: dict[str, Any], now: dt.datetime, tz: Any) -> str:
     if v.get("by"):
         late = v["by"] < now.astimezone(tz).date().isoformat()
         by = f", {'was due' if late else 'by'} {dt.date.fromisoformat(v['by']).strftime('%b %-d')}"
-    return (f"{flag}: {_clean(v.get('from'), 40)}, {_short_subject(v.get('subject'))}{what} "
+    more = f" ({len(v['also']) + 1} emails)" if v.get("also") else ""
+    return (f"{flag}: {_clean(v.get('from'), 40)}, {_short_subject(v.get('subject'))}{more}{what} "
             f"({_short_day(received, now, tz)}{', ' + _age(received, now) + ' ago' if old else ''}{by})")
 
 
@@ -2009,7 +2019,9 @@ def details(entries: dict[str, dict[str, Any]], ctx: Any) -> list[dict[str, Any]
                           "state": "warn",
                           "facts": [f"Waiting on you · {_clean(v.get('from'), 60)} · {when(str(v.get('received')), tz)}"
                                     f" · {_age(str(v.get('received') or ''), now)} old"
-                                    + (f" · due {v['by']}" if v.get("by") else ""), v.get("what") or ""],
+                                    + (f" · due {v['by']}" if v.get("by") else "")
+                                    + (f" · {len(v['also']) + 1} emails in this thread" if v.get("also") else ""),
+                                    v.get("what") or ""],
                           "actions": [{"id": "done", "label": "Done"}, {"id": "dismiss", "label": "Not needed"}]}
                          for v in waiting]
             review = st.get("review") or {}
@@ -2390,7 +2402,8 @@ def act(entries: dict[str, dict[str, Any]], ctx: Any, entry: str, item: str, act
         uid = item.removeprefix("open-")
         if uid not in (review.get("seen") or {}):
             return {"ok": False, "error": "That email isn't on the open list any more"}
-        review["done"] = list(dict.fromkeys([*(review.get("done") or []), uid]))[-REVIEW_KEEP:]
+        same = next((v["also"] for v in open_items(entry, entries[entry], st) if str(v["uid"]) == uid), [])
+        review["done"] = list(dict.fromkeys([*(review.get("done") or []), uid, *same]))[-REVIEW_KEEP:]
         st["review"] = review
         save_state(entry, st)
         return {"ok": True, "message": "Done: off the list." if action == "done" else "Off the list: Hisho won't mention it again."}
