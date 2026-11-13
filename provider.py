@@ -509,9 +509,21 @@ def never_clean(c: dict[str, Any], m: dict[str, Any] | None, clean: dict[str, An
     return ""
 
 
+def waiting_cards() -> set[str] | None:
+    """Keys of this add-on's cards still waiting on the Approvals list (None: Core can't say, e.g. an older Core)."""
+    try:
+        from hisho import approvals
+        return approvals.waiting_keys("email")
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def make_cleanup_card(name: str, entry: dict[str, Any], clean: dict[str, Any], kept: list[dict[str, Any]],
-                      validity: str, now: dt.datetime, junk: bool = False) -> dict[str, Any]:
-    """Today's card: every email that may be cleaned, is old enough, is still in the inbox and wasn't offered."""
+                      validity: str, now: dt.datetime, junk: bool = False,
+                      waiting: set[str] | None = None) -> dict[str, Any]:
+    """Today's card: every email that may be cleaned, is old enough, is still in the inbox and wasn't offered.
+    One card per folder: while an earlier one still waits on the Approvals list (``waiting``), it stays (whatever
+    its age) and no new one is made; what came in meanwhile is offered on the next card, after that one is decided."""
     clean = dict(clean)
     if not cleanable(str(entry.get("folder") or "INBOX"), junk):
         clean["cards"] = {}
@@ -530,9 +542,10 @@ def make_cleanup_card(name: str, entry: dict[str, Any], clean: dict[str, Any], k
                       "subject": c["subject"], "about": c.get("about") or "", "date": c["received"][:10], "group": c["group"]})
     items = items[:cleaner.MAX_ITEMS]
     day, _h = _owner_day(now)
+    open_cards = set(clean.get("cards") or {}) & (waiting or set())
     cards = {k: v for k, v in (clean.get("cards") or {}).items()
-             if v["at"] >= (now - dt.timedelta(days=CLEAN_CARD_DAYS)).isoformat()}
-    if items:
+             if k in open_cards or v["at"] >= (now - dt.timedelta(days=CLEAN_CARD_DAYS)).isoformat()}
+    if items and not open_cards:
         cards[f"cleanup:{name}:{validity}:{day}"] = {"at": now.isoformat(timespec="seconds"), "items": items}
         clean["offered"] = sorted(offered | {it["uid"] for it in items})[-20000:]
     clean["cards"] = cards
@@ -1344,7 +1357,7 @@ def _poll_one(name: str, entry: dict[str, Any], ctx: Any, *, now: dt.datetime | 
     if scanning:
         try:
             clean = sort_for_cleanup(entry, clean, kept, now, ask)
-            clean = make_cleanup_card(name, entry, clean, kept, validity, now, junk=junk)
+            clean = make_cleanup_card(name, entry, clean, kept, validity, now, junk=junk, waiting=waiting_cards())
         except Exception as exc:  # noqa: BLE001 -- tried again at the next poll
             clean["error"] = str(exc)[:200]
     state["cleanup"] = clean
@@ -2268,6 +2281,8 @@ def _stream_cards(name: str, entry: dict[str, Any], company: str, sname: str, fo
                   recent: str, tz: Any) -> list[dict[str, Any]]:
     """One folder's cards; the inbox's keys are the mailbox's own (``reply:<mailbox>:...``), a folder's carry it."""
     out = []
+    events = {m["uid"]: card for m in st.get("messages") or []
+              if (card := _event_card(name, entry, company, sname, folder, st, m, recent, tz))}
     for m in st.get("messages") or []:
         if m.get("answered") or m["received"] < recent or m.get("junk") or m.get("moved_from"):
             continue   # Spam: shown, never carded; a moved copy: its card (if any) comes from where it was first read
@@ -2283,17 +2298,14 @@ def _stream_cards(name: str, entry: dict[str, Any], company: str, sname: str, fo
                                     *_looks(entry, m["draft"]["body"])],
                         "action": {"type": "email.send", "payload": _reply_payload(name, m)},
                         "pressing": bool(m.get("pressing")) and not m.get("first_look")})
-        elif m.get("label") in TODO_LABELS:
+        elif m.get("label") in TODO_LABELS and m["uid"] not in events:   # an event: its calendar card is the one card
             out.append({"key": f"todo:{sname}:{st.get('uidvalidity')}:{m['uid']}", "company": company, "link": link,
                         "title": f"Put on Today: {m.get('subject')}"[:200],
                         "why": f"{m['label']} from {_sender(m)}, received {when(m['received'], tz)}: {_summary(m, entry)}",
                         "action": {"type": "today_add", "payload": {"text": _clean(
                             f"{company}: {_summary(m, entry)} ({_sender(m)}, {when(m['received'], tz)})", 400)}},
                         "pressing": bool(m.get("pressing")) and not m.get("first_look")})
-    for m in st.get("messages") or []:
-        card = _event_card(name, entry, company, sname, folder, st, m, recent, tz)
-        if card:
-            out.append(card)
+    out += events.values()
     for m in st.get("messages") or []:
         note = m.get("note") or {} if not m.get("moved_from") else {}
         for n, c in enumerate(note.get("cards") or []):

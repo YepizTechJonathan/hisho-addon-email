@@ -154,6 +154,24 @@ def test_one_card_a_day_and_nothing_offered_twice():
     assert [it["uid"] for it in new[0]["items"]] == [8]        # only the one that is now a day old
 
 
+def test_one_card_per_folder_while_it_waits_on_the_approvals_list(monkeypatch):
+    # 2026-11-13: a week of unanswered daily cards for one folder arrived at once and looked like repeats
+    waiting = set()
+    monkeypatch.setattr(mod, "waiting_cards", lambda: set(waiting))
+    box = Box(INBOX, SENT)
+    poll(box, sorter(GROUPS))
+    (first,) = mod.load_state("pp")["cleanup"]["cards"]
+    waiting.add(first)                                          # not decided yet
+    for days in (1, 2, 9):                                      # past CLEAN_CARD_DAYS too: it still waits
+        cards = poll(box, sorter(GROUPS), now=NOW + dt.timedelta(days=days))["cleanup"]["cards"]
+        assert list(cards) == [first]
+    assert [c["key"] for c in mod.proposals({"pp": PP}, Ctx()) if c["action"]["type"] == "email.trash"] == [first]
+    waiting.clear()                                             # the owner decided it
+    cards = poll(box, sorter(GROUPS), now=NOW + dt.timedelta(days=10))["cleanup"]["cards"]
+    (new,) = [v for k, v in cards.items() if k != first]
+    assert [it["uid"] for it in new["items"]] == [8]            # what came in meanwhile, nothing offered twice
+
+
 def test_never_offered_whatever_the_labeller_or_sorter_says():
     box = Box(INBOX, SENT)
     poll(box, sorter(GROUPS))

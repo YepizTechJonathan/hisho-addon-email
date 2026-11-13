@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.14.4
+
+- One clean-up card per folder: while one waits on the Approvals list (any age), no new one is made; what comes in
+  meanwhile goes on the next card. A week of unanswered daily cards for one Gmail inbox had arrived at once and looked
+  like repeats (each listed different emails; nothing was ever moved twice).
+- An email that names an event gets only its "Add to your calendar" card, not also a "Put on Today" card for the same
+  thing. Needs Core with `approvals.waiting_keys` (older Core: a card a day, as before).
+
 ## 0.14.3
 
 - A mailbox whose name has capital letters (a Gmail entry named after its address, "01Example") could not send an

@@ -295,6 +295,20 @@ def test_the_card_puts_the_event_on_the_calendar_only_through_approvals(mod, mon
     assert c["context"][0]["text"] == "Can you do Thursday at 10?" and {f["name"] for f in c["fields"]} >= {"title", "start"}
 
 
+def test_a_deadline_that_names_an_event_is_one_card_not_two(mod, monkeypatch):
+    # 2026-11-13: a school email got "Put on Today" and "Add to your calendar" for the same thing
+    monkeypatch.setattr(mod, "_tz", lambda: ZoneInfo("America/Los_Angeles"))
+    t = (NOW - dt.timedelta(hours=2)).isoformat()
+    msgs = [{"uid": 7, "from_addr": "teacher@school.example", "subject": "Conferences week", "label": "Deadline",
+             "summary": "Early dismissal all week", "received": t, "event": {"title": "Conferences", "start": "2026-11-16"}},
+            {"uid": 8, "from_addr": "bill@vendor.example", "subject": "Pay by Friday", "label": "Deadline",
+             "summary": "Invoice due Friday", "received": t}]
+    mod.save_state("home", {"status": "ok", "uidvalidity": "1", "messages": msgs})
+    cards = mod.proposals({"home": {**GMAIL}}, None)
+    assert sorted((c["action"]["type"], c["key"]) for c in cards) == [("calendar_add", "event:home:1:7"),
+                                                                      ("today_add", "todo:home:1:8")]
+
+
 def test_the_sort_is_asked_for_events_in_the_owners_zone(mod, monkeypatch):
     monkeypatch.setattr(mod, "_tz", lambda: ZoneInfo("America/Los_Angeles"))
     seen = []
