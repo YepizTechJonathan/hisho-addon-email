@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.18.2
+
+- The inbox review (what stays on the "waiting on you" list) uses the same government-contracting rules as the sort
+  for a mailbox with `gov_contractor: true`: a fake registry or paid SAM.gov renewal, or a bid-writing / lead-list
+  pitch, never goes on the list, even when it is old mail the sort never saw; a real solicitation, RFQ, contracting
+  officer, prime or APEX Accelerator does, with what to answer.
+
 ## 0.18.1
 
 - Tests use a made-up company name (the store's release takes no personal names).

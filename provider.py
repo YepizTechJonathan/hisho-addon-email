@@ -1068,7 +1068,7 @@ delivery notices, newsletters, promotions, digests, social-media notifications, 
 sign-in codes, security alerts about something they did, job boards' alerts, anything already done or answered in
 the email itself, and anything whose moment has passed (an event, webinar, sale or deadline already over, a
 reminder for a past date). A likely scam or phishing email never needs them.
-
+{gov}
 For each email answer one line of JSON and nothing else:
 {{"id": N, "needs": true|false, "do": "<Reply|Pay|Do|Decide|Attend|Read>", "what": "<what they must do, at most 12
 words, naming the person or company>", "by": "<YYYY-MM-DD if the email names a date it must be done by, else empty>"}}
@@ -1178,8 +1178,11 @@ def review_mail(entry: dict[str, Any], todo: list[dict[str, Any]], now: dt.datet
                  "received": f"{str(c.get('received') or '')[:10]} ({age} days ago)",
                  "body": str(c.get("body") or "")[:REVIEW_BODY]}
             fenced.append(_fence(nonce, n, m))
+        gov = ("\n" + GOV_RULES + "Scams and cold sales never need them; a real lead (a solicitation, an RFQ, a "
+               "contracting officer, a prime asking for a quote, an APEX Accelerator) does, with what to answer.\n"
+               ) if sells_to_government(entry) else ""
         prompt = REVIEW_PROMPT.format(who=who, now=now.astimezone(tz).strftime("%A %Y-%m-%d"), nonce=nonce,
-                                      messages="\n\n".join(fenced))
+                                      messages="\n\n".join(fenced), gov=gov)
         try:
             got = parse_review((ask or _claude)(prompt), list(range(1, len(batch) + 1)))
         except Exception:  # noqa: BLE001 -- Claude away: this batch is tried again at the next poll

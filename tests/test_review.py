@@ -268,3 +268,16 @@ def test_a_run_of_the_same_email_is_one_item_and_done_clears_it_all():
 def test_a_mailbox_named_with_capitals_can_send_draft_and_clean_up():
     # a Gmail entry named "01Example" (the page keeps the case typed) was refused by Send, drafts and clean-up
     assert mod.sender.validate({"mailbox": "01Example", "to": ["a@b.example"], "subject": "Hi", "body": "x"})["mailbox"] == "01Example"
+
+
+def test_a_mailbox_public_on_sam_gov_reviews_with_the_government_rules():
+    _box, ask = reviewed(ask=claude())
+    plain = [p for p in ask.seen if p.startswith("You look through email")][0]
+    assert "SAM.gov" not in plain
+    mod.save_state("home", {})
+    ask = claude()
+    box = Box()
+    poll(box, ask, entry={**ENTRY, "gov_contractor": True})
+    poll(box, ask, now=NOW + dt.timedelta(minutes=5), entry={**ENTRY, "gov_contractor": True})
+    gov = [p for p in ask.seen if p.startswith("You look through email")][0]
+    assert "public on SAM.gov" in gov and "Scams and cold sales never need them" in gov
