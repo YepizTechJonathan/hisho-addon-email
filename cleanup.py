@@ -60,6 +60,8 @@ def check_cleanup_command(name: str, args: tuple[Any, ...], *, inbox: str, trash
         items = " ".join(str(a) for a in rest[1:])
         if sub == "FETCH" and "PEEK" in items.upper() and "BODY[" not in items.upper().replace("BODY.PEEK[", ""):
             return
+        if sub == "FETCH" and items.upper() == "(UID X-GM-LABELS)":   # Gmail's labels: a read
+            return
         if sub in ("MOVE", "COPY") and items.strip('"') == trash:
             return
         if sub == "STORE" and items.replace(" ", "").upper() == "+FLAGS(\\DELETED)":
@@ -139,11 +141,30 @@ def trash(entry: dict[str, Any], password: str, p: dict[str, Any], *,
                     h = email.message_from_bytes(part[1], policy=email.policy.default)
                     found[int(m.group(1))] = (re.findall(r"<[^<>\s]+>", str(h.get("Message-ID") or "")) or [""])[0]
         ok = sorted(u for u, it in want.items() if u in found and (not it["message_id"] or found[u] == it["message_id"]))
-        skipped = len(want) - len(ok)
+        caps = {c.upper() for c in (getattr(conn, "capabilities", ()) or ())}
+        labelled = []
+        if "X-GM-EXT-1" in caps and ok:   # Gmail: Trash takes a message out of every label; one you filed or starred stays
+            typ, data = conn.uid("FETCH", ",".join(str(u) for u in ok), "(UID X-GM-LABELS)")
+            keep = set()
+            for part in (data or []) if typ == "OK" else []:
+                head = part[0] if isinstance(part, tuple) else part
+                m = re.search(rb"UID (\d+)", head or b"") if isinstance(head, bytes) else None
+                got = re.search(rb"X-GM-LABELS \((.*?)\)", head) if m else None
+                names = [x.strip(b'"').decode("utf-8", "replace").lower()
+                         for x in re.findall(rb'"[^"]*"|\S+', got.group(1))] if got and not isinstance(part, tuple) else ["?"]
+                if m and [n for n in names if n not in ("\\\\inbox", "\\inbox", "\\\\important", "\\important")]:
+                    keep.add(int(m.group(1)))
+            if typ != "OK":
+                return {"ok": False, "error": "Gmail didn't say which labels they have; nothing was moved"}
+            labelled = sorted(keep)
+            ok = [u for u in ok if u not in keep]
+        skipped = len(want) - len(ok) - len(labelled)
+        if not ok and labelled:
+            return {"ok": True, "moved": [], "skipped": skipped, "labelled": labelled, "how": "",
+                    "message": f"Nothing moved: all {len(labelled)} are starred or under one of your labels."}
         if not ok:
             return {"ok": False, "error": "none of them are in the inbox any more (moved or deleted already); nothing done"}
         uidset = ",".join(str(u) for u in ok)
-        caps = {c.upper() for c in (getattr(conn, "capabilities", ()) or ())}
         if "MOVE" in caps:
             typ, data = conn.uid("MOVE", uidset, mailbox(folder))
             how = "MOVE"
@@ -156,9 +177,11 @@ def trash(entry: dict[str, Any], password: str, p: dict[str, Any], *,
             how = "COPY+EXPUNGE"
         if typ != "OK":
             return {"ok": False, "error": f"Zoho refused the move: {data!r}"[:240]}
-        return {"ok": True, "moved": ok, "skipped": skipped, "how": how,
-                "message": f"Moved {len(ok)} email{'s' * (len(ok) != 1)} to {folder} (Zoho keeps them about 30 days)"
-                           + (f"; {skipped} had already gone or changed and were left alone" if skipped else "") + "."}
+        keeps = "Gmail" if "X-GM-EXT-1" in caps else "Zoho" if "zoho" in str(entry.get("imap_host") or "zoho") else "Your mail"
+        return {"ok": True, "moved": ok, "skipped": skipped, "labelled": labelled, "how": how,
+                "message": f"Moved {len(ok)} email{'s' * (len(ok) != 1)} to {folder} ({keeps} keeps Trash about 30 days)"
+                           + (f"; {skipped} had already gone or changed and were left alone" if skipped else "")
+                           + (f"; {len(labelled)} starred or under one of your labels were left alone" if labelled else "") + "."}
     except (imaplib.IMAP4.error, OSError, ssl.SSLError) as exc:
         return {"ok": False, "error": f"clean-up stopped: {str(exc).replace(password, '***')[:200]}"}
     finally:

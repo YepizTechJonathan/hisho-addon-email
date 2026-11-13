@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.17.0
+
+- Archived mail is the owner's to keep: Gmail's Important (mostly archived mail) is no longer cleaned up unless named in
+  `folders`.
+- Gmail: right before moving, clean-up asks for each email's labels and leaves alone any that is starred or filed under
+  one of the owner's labels (Trash would take it out of them). The done message names the right provider.
+- `keep_words`: an email whose subject or sender names one (Comic-Con, a school) is never cleaned up.
+
 ## 0.16.2
 
 - A second clean-up card the same day ("Clean up now") gets a key of its own (`<day>-2`): it had reused the day's key,

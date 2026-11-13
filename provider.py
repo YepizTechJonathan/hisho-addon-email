@@ -525,6 +525,10 @@ def job_alert(c: dict[str, Any], m: dict[str, Any] | None = None) -> bool:
 def never_clean(c: dict[str, Any], m: dict[str, Any] | None, clean: dict[str, Any]) -> str:
     """Why this email may never go on a clean-up card ('' = it may). A job board's alert may go once it is a week old,
     even from a sender you keep (they were kept for the job hunt, not for ever)."""
+    text = f"{c.get('subject') or ''} {c.get('from') or ''} {c.get('from_addr') or ''}".lower()
+    word = next((w for w in clean.get("keep_words") or [] if w and w.lower() in text), "")
+    if word:
+        return f"you keep anything about {word}"
     alert = job_alert(c, m)
     if m is not None and m.get("scam") and not m.get("answered"):
         return ""   # the labeller read it: a likely job scam (asks for money, ID, bank details...)
@@ -555,6 +559,14 @@ def waiting_cards() -> set[str] | None:
         return None
 
 
+def keep_words(entry: dict[str, Any]) -> list[str]:
+    """The entry's ``keep_words`` (comma-separated): an email whose subject or sender names one is never cleaned up
+    (Comic-Con, a school's name...)."""
+    raw = entry.get("keep_words") or ""
+    items = raw if isinstance(raw, list) else str(raw).split(",")
+    return [w.strip() for w in items if str(w).strip()][:50]
+
+
 def make_cleanup_card(name: str, entry: dict[str, Any], clean: dict[str, Any], kept: list[dict[str, Any]],
                       validity: str, now: dt.datetime, junk: bool = False,
                       waiting: set[str] | None = None, skip_ids: set[str] | None = None) -> dict[str, Any]:
@@ -562,6 +574,7 @@ def make_cleanup_card(name: str, entry: dict[str, Any], clean: dict[str, Any], k
     One card per folder: while an earlier one still waits on the Approvals list (``waiting``), it stays (whatever
     its age) and no new one is made; what came in meanwhile is offered on the next card, after that one is decided."""
     clean = dict(clean)
+    clean["keep_words"] = keep_words(entry)
     if not cleanable(str(entry.get("folder") or "INBOX"), junk):
         clean["cards"] = {}
         return clean   # Archive, Payments, your own folders: never a clean-up card
@@ -655,6 +668,7 @@ def run_trash(entries: dict[str, dict[str, Any]], ctx: Any, payload: dict[str, A
     st = load_state(sname)
     clean = dict(st.get("cleanup") or {})
     clean["keep_senders"] = sorted(set(clean.get("keep_senders") or []) | set(p["keep_senders"]))
+    clean["keep_words"] = keep_words(base)
     by_uid = {m["uid"]: m for m in st.get("messages") or []}
     cats = clean.get("cats") or {}
     allowed = [it for it in p["items"]
@@ -1510,11 +1524,11 @@ def streams(name: str, entry: dict[str, Any]) -> list[tuple[str, str]]:
 
 
 def resolve_views(listed: dict[str, str], wanted: list[str]) -> list[str]:
-    """Gmail's Important (by its special-use flag or name), when every folder is read or it is named."""
+    """Gmail's Important (by its special-use flag or name), only when named in ``folders``: most of its mail is
+    archived, and archived mail is the owner's to keep, never cleaned up (his rule, 2026-11-13)."""
     names = {w.lower() for w in wanted}
     return [n for n, flags in listed.items()
-            if (any(u in flags for u in VIEW_USES) or n.lower() in VIEW_NAMES)
-            and (names == {"all"} or n.lower() in names)]
+            if (any(u in flags for u in VIEW_USES) or n.lower() in VIEW_NAMES) and n.lower() in names]
 
 
 def gmail_labels(conn: Any, uids: list[int]) -> dict[int, list[str]]:
@@ -1597,8 +1611,9 @@ def poll(name: str, entry: dict[str, Any], ctx: Any, *, now: dt.datetime | None 
             found = resolve_folders(held["conn"], wanted_folders(entry), entry)
             junk = [f for f in found if is_junk(f, listed.get(f, ""))]
             st = load_state(name)
-            st["folders_found"], st["folders_junk"] = found, junk
-            st["folders_views"] = [v for v in resolve_views(listed, wanted_folders(entry)) if v not in found]
+            views = resolve_views(listed, wanted_folders(entry))
+            found = [f for f in found if f not in views]
+            st["folders_found"], st["folders_junk"], st["folders_views"] = found, junk, views
             save_state(name, st)
             for v in st["folders_views"]:
                 try:

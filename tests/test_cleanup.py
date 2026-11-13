@@ -213,8 +213,13 @@ class TrashBox:
     def response(self, code):
         return code, [b"9"]
 
+    labels = {}
+
     def uid(self, command, *args):
         self._cmd("UID", command, *args)
+        if command == "FETCH" and "X-GM-LABELS" in args[1]:
+            return "OK", [f'{u} (X-GM-LABELS ({" ".join(TrashBox.labels.get(u, []))}) UID {u})'.encode()
+                          for u in (int(x) for x in args[0].split(","))]
         if command == "FETCH":
             out = []
             for u in [int(x) for x in args[0].split(",")]:
@@ -334,6 +339,10 @@ class GmailBox(Box):
 def test_gmail_important_gets_clean_up_cards_only_for_mail_in_no_other_label(monkeypatch):
     monkeypatch.setattr(mod, "waiting_cards", lambda: set())
     g = {**PP, "folders": "all"}
+    box0 = GmailBox({1: INBOX[1]}, {12: INBOX[2]}, {}, SENT)
+    mod.poll("pp", g, Ctx(), now=NOW, ask=sorter(GROUPS), connect_fn=lambda e, p: box0)
+    assert mod.load_state("pp")["folders_views"] == []            # "all": archived mail is never cleaned up
+    g = {**PP, "folders": "[Gmail]/Important"}                     # only when named
     inbox = {1: INBOX[1]}                                          # also in Important (same Message-ID)
     important = {11: INBOX[1], 12: INBOX[2], 13: INBOX[3], 14: INBOX[4], 15: INBOX[5]}
     labels = {11: ['"\\\\Inbox"'], 13: ['"Purchased/Receipts"'], 14: ['"\\\\Sent"']}
@@ -408,3 +417,29 @@ def test_a_second_card_the_same_day_has_its_own_key(monkeypatch):
     mod.save_state("pp", st)
     cards = poll(box, sorter({**GROUPS, "More news": ("Newsletters", "news")}), now=NOW + dt.timedelta(hours=1))["cleanup"]["cards"]
     assert sorted(cards) == [first, first + "-2"] and [i["uid"] for i in cards[first + "-2"]["items"]] == [9]
+
+
+def test_gmail_never_trashes_mail_you_starred_or_filed_under_a_label(monkeypatch):
+    # 2026-11-13: in Gmail, Trash takes a message out of every label; filed or starred mail is the owner's to keep
+    pay = _card()
+    TrashBox.labels = {1: ['"\\\\Important"'], 2: ['"Comic-Con"'], 3: ["\\Starred"], 4: ['"\\\\Inbox"']}
+    try:
+        r = run(pay, monkeypatch, caps=("IMAP4REV1", "MOVE", "UIDPLUS", "X-GM-EXT-1"))
+    finally:
+        TrashBox.labels = {}
+    assert r["ok"] and r["moved"] == [1, 4, 5] and r["labelled"] == [2, 3]
+    assert "2 starred or under one of your labels were left alone" in r["message"] and "Gmail keeps" in r["message"]
+
+
+def test_keep_words_are_never_cleaned_up(monkeypatch):
+    monkeypatch.setattr(mod, "waiting_cards", lambda: set())
+    box = Box({**INBOX, 30: mail("Comic-Con 2027 badges on sale", sender="Comic-Con <donotreply@comic-con.org>", bulk=True)}, SENT)
+    st = mod.load_state("pp")
+    mod.save_state("pp", st)
+    poll_entry = {**PP, "keep_words": "comic-con, WonderCon"}
+    mod.poll("pp", poll_entry, Ctx(), now=NOW, ask=sorter({**GROUPS, "Comic-Con 2027 badges on sale": ("Promotions", "badges")}),
+             connect_fn=lambda e, p: box)
+    (card,) = [c for c in mod.proposals({"pp": poll_entry}, Ctx()) if c["action"]["type"] == "email.trash"]
+    assert 30 not in [it["uid"] for it in card["action"]["payload"]["items"]]
+    assert mod.never_clean({"subject": "WonderCon tickets", "group": "Promotions"}, None,
+                           {"keep_words": ["WonderCon"]}) == "you keep anything about WonderCon"

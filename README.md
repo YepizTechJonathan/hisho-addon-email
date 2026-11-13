@@ -75,6 +75,7 @@ mailbox shows "waiting for app password": no error and no alert.
   - `imap_port` (port, optional)
   - `folder` (str, optional)
   - `folders` (str, optional)
+  - `keep_words` (str, optional)
   - `alerts` (bool, optional)
   - `personal` (bool, optional)
   - `drafts` (bool, optional)

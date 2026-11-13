@@ -17,7 +17,7 @@ name: email
 kind: integration
 title: Email
 description: Reads your company inboxes, drafts replies and clean-ups; sends or moves to Trash only when you approve.
-version: 0.16.2
+version: 0.17.0
 you_need:
   - "A mailbox that offers IMAP and SMTP (Gmail / Google Workspace, Zoho, iCloud, Yahoo, Fastmail, your host's mail...)"
   - "An app password for it (not your normal password); Set up this mailbox says where your provider makes one"
@@ -52,6 +52,7 @@ entry_schema:
   imap_port: "port?"              # default 993 (TLS)
   folder: "str?"                  # default INBOX
   folders: "str?"                 # other folders read the same way: "all" (default: every folder but Trash, Drafts, templates and Sent, new ones too) or names; junk in Spam is offered on the clean-up card, real-looking Spam shown as possibly misfiled; clean-up in the inbox, Spam, Newsletter and Notification
+  keep_words: "str?"              # comma-separated words: an email whose subject or sender names one is never cleaned up (e.g. Comic-Con, your kid's school)
   alerts: "bool?"                 # false = pressing emails show on the page and in Today.md but never push (default true)
   personal: "bool?"               # a personal mailbox: sorted for a person (bills, appointments, deliveries, security notices, people you know), not a business (default: true when company is Personal)
   drafts: "bool?"                 # reply drafts on the Approvals page (default: on for a business mailbox, off for a personal one)
@@ -81,6 +82,7 @@ entry_form:
   imap_port: "IMAP port (default 993)"
   folder: "Folder (default INBOX)"
   folders: "Other folders to read (default all)"
+  keep_words: "Never clean up emails about (comma-separated)"
   alerts: "Phone alerts for pressing emails (true/false)"
   personal: "Personal mailbox (true/false)"
   drafts: "Draft replies (true/false)"
