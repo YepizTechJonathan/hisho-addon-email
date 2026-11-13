@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.16.1
+
+- Fake job offers are clean-up, not job mail: the header sort puts them in Junk ("you're hired" with no interview,
+  pay far too good, a free-mail address posing as a company, package or "assistant" jobs, checks, crypto, gift cards),
+  and one the labeller flagged as a likely scam may go after a day, whoever sent it. Mail already sorted as Jobs is
+  sorted again once (SORT_VERSION 2).
+
 ## 0.16.0
 
 - A job board's automated alert (LinkedIn Job Alerts, ZipRecruiter, Indeed, Monster...) goes on a clean-up card once it

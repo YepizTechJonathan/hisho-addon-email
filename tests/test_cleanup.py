@@ -376,3 +376,20 @@ def test_week_old_job_alerts_are_offered_even_from_a_kept_sender_but_never_about
     assert card["title"].endswith("1 email (1 job alerts)")
     assert mod.job_alert({"from_addr": "jobalerts-noreply@linkedin.com", "group": "Jobs", "subject": "x"},
                          {"label": "Job search", "pressing": "reply"}) is False
+
+
+def test_a_fake_job_offer_goes_after_a_day_and_old_job_sorts_are_redone(monkeypatch):
+    monkeypatch.setattr(mod, "waiting_cards", lambda: set())
+    assert "fake job offers" in mod.SORT_PROMPT and "Junk" in mod.SORT_PROMPT.split("fake job offers")[0]
+    clean = {"keep_senders": ["hr.dept.hiring@gmail.com"]}
+    c = {"group": "Jobs", "from_addr": "hr.dept.hiring@gmail.com", "subject": "You're hired! Send your bank info"}
+    assert mod.never_clean(c, {"label": "Job search", "scam": True}, clean) == ""
+    assert mod.never_clean(c, {"label": "Job search"}, clean) == "Job search"            # not flagged: kept
+    box = Box({1: INBOX[1]}, SENT)
+    st = mod.load_state("pp")
+    st["cleanup"] = {"validity": "9", "cats": {"1": {"group": "Jobs", "uid": 1}, "2": {"group": "Keep", "uid": 2}}}
+    mod.save_state("pp", st)
+    ask = sorter(GROUPS)
+    poll(box, ask)
+    clean = mod.load_state("pp")["cleanup"]
+    assert clean["sort_version"] == mod.SORT_VERSION and clean["cats"]["1"]["group"] == "Newsletters"   # sorted again
