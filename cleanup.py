@@ -83,7 +83,7 @@ def validate(payload: Any) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise CleanupError("clean-up needs a mailbox and its messages")
     mailbox = str(payload.get("mailbox") or "")
-    if not re.match(r"^[a-z0-9-]{1,40}$", mailbox):
+    if not re.match(r"^[A-Za-z0-9-]{1,40}$", mailbox):
         raise CleanupError("which mailbox")
     items, seen = [], set()
     for it in payload.get("items") or []:

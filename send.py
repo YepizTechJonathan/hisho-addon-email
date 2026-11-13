@@ -102,7 +102,7 @@ def validate(payload: Any) -> dict[str, Any]:
     if not body or len(body) > MAX_BODY:
         raise SendError(f"a body of 1 to {MAX_BODY} characters")
     mailbox = str(payload.get("mailbox") or "")
-    if not re.match(r"^[a-z0-9-]{1,40}$", mailbox):
+    if not re.match(r"^[A-Za-z0-9-]{1,40}$", mailbox):
         raise SendError("which mailbox it's sent from")
     refs = [r for r in str(" ".join(payload.get("references") or []) if isinstance(payload.get("references"), list)
                            else payload.get("references") or "").split() if re.match(r"^<[^<>\s]{3,250}>$", r)][-20:]

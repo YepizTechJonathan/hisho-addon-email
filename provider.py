@@ -1663,7 +1663,7 @@ def validate_setting(payload: Any) -> dict[str, Any]:
     if not isinstance(payload, dict) or payload.get("setting") not in SETTINGS:
         raise MailError(f"a setting is one of: {', '.join(SETTINGS)}")
     mailbox = str(payload.get("mailbox") or "")
-    if not re.match(r"^[a-z0-9-]{1,40}$", mailbox):
+    if not re.match(r"^[A-Za-z0-9-]{1,40}$", mailbox):
         raise MailError("which mailbox")
     value = str(payload.get("value") or "").replace("\r\n", "\n").strip()
     if payload["setting"] == "signature" and not 1 <= len(value) <= 600:

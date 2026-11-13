@@ -263,3 +263,8 @@ def test_a_run_of_the_same_email_is_one_item_and_done_clears_it_all():
     assert any("Your education progress (2 emails)" in l for l in mod.morning({"home": ENTRY}, Ctx())["lines"])
     assert mod.act({"home": ENTRY}, Ctx(), "home", "open-9", "done")["ok"]
     assert "Your education progress" not in [v["subject"] for v in mod.open_items("home", ENTRY)]
+
+
+def test_a_mailbox_named_with_capitals_can_send_draft_and_clean_up():
+    # a Gmail entry named "01Example" (the page keeps the case typed) was refused by Send, drafts and clean-up
+    assert mod.sender.validate({"mailbox": "01Example", "to": ["a@b.example"], "subject": "Hi", "body": "x"})["mailbox"] == "01Example"

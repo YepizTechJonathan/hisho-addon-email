@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.14.3
+
+- A mailbox whose name has capital letters (a Gmail entry named after its address, "01Example") could not send an
+  approved reply, save a draft or move approved clean-up mail to Trash: the name check allowed lower case only.
+
 ## 0.14.2
 
 - A thread or a run of the same notice (three reminders of one request, a support case's replies) is one item on the
