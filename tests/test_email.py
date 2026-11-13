@@ -273,7 +273,7 @@ def test_a_government_contractor_sort_knows_fake_registries_and_never_junks_a_re
             {"uid": 13, "from_addr": "donotreply@sam.gov", "subject": "Registration", "body": "b", "auth_ok": True},
             {"uid": 14, "from_addr": "registry2345@gmail.com", "subject": "Trademark", "body": "b", "auth_ok": True},
             {"uid": 15, "from_addr": "bids@prime.example", "subject": "RFQ", "body": "b"}]
-    got = mod.classify("PatriotPoint", msgs, NOW, ask, gov=True)
+    got = mod.classify("Acme Federal", msgs, NOW, ask, gov=True)
     assert "SAM.gov" in seen["prompt"] and "uspto.gov" in seen["prompt"] and "APEX Accelerator" in seen["prompt"]
     assert got[11]["scam"] is True and got[11]["pressing"] == ""            # a scam is never pushed
     assert got[12]["label"] == "Needs reply" and "scam" not in got[12]      # a verified .mil sender is never junk
@@ -281,7 +281,7 @@ def test_a_government_contractor_sort_knows_fake_registries_and_never_junks_a_re
     assert got[14]["pressing"] == ""                                        # no agency writes from a free address
     assert got[15]["label"] == "Customer request"
     fake_gov = {"uid": 16, "from_addr": "notice@sam.gov", "subject": "x", "body": "b", "auth_ok": False}
-    assert mod.classify("PatriotPoint", [fake_gov], NOW, labeller([{"id": 1, "label": "Junk", "summary": "spoof",
+    assert mod.classify("Acme Federal", [fake_gov], NOW, labeller([{"id": 1, "label": "Junk", "summary": "spoof",
                                                                      "scam": True}]), gov=True)[16]["scam"] is True
     plain = mod.classify("Acme", msgs[:1], NOW, lambda p: seen.update(plain=p) or "")
     assert "uspto.gov" not in seen["plain"] and plain == {}                 # only a mailbox marked gov_contractor

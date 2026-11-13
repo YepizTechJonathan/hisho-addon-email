@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.18.1
+
+- Tests use a made-up company name (the store's release takes no personal names).
+
 ## 0.18.0
 
 - `gov_contractor: true` for a mailbox whose address is public on SAM.gov: the sort is told what government-contractor
