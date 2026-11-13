@@ -161,7 +161,7 @@ def test_today_lists_the_job_hunt_first(mod):
 def test_a_push_only_when_someone_waits_on_a_reply(mod):
     jobs_state(mod)
     probs = mod.summary({"home": {**GMAIL}}, type("C", (), {"secret": lambda s, n: "pw"})())["problems"]
-    assert [p["title"] for p in probs] == ["Personal: job reply from Pat Recruiter"]
+    assert [p["title"] for p in probs if not p["key"].startswith("open-")] == ["Personal: job reply from Pat Recruiter"]
 
 
 def test_job_mail_is_never_cleaned_and_comes_first_on_the_page(mod):
@@ -171,7 +171,7 @@ def test_job_mail_is_never_cleaned_and_comes_first_on_the_page(mod):
                            {"label": "Job search"}, clean) == "Job search"
     assert mod.never_clean(clean["cats"]["3"], None, clean) == "not clutter"   # the header sort's Jobs group stays
     items = mod.details({"home": {**GMAIL}}, None)[0]["items"]
-    names = [i["name"] for i in items if i["id"] not in ("new", "cleanup")]
+    names = [i["name"] for i in items if i["id"] not in ("new", "cleanup") and not i["id"].startswith("open-")]
     assert names[:2] == ["Interview Tuesday?", "You're hired! Send your bank info"] or \
         set(names[:2]) == {"Interview Tuesday?", "You're hired! Send your bank info"}
     scam = next(i for i in items if i["name"].startswith("You're hired"))
@@ -188,6 +188,8 @@ def test_job_mail_sorted_before_this_version_is_sorted_again_once(mod):
     asked = []
 
     def ask(prompt):
+        if prompt.startswith("You look through email still sitting"):
+            return ""   # the inbox review (0.14.0): not what this test counts
         asked.append(prompt)
         return json.dumps({"id": 1, "label": "Job search", "summary": "job alert", "pressing": ""})
     box = GmailBox()

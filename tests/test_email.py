@@ -194,7 +194,8 @@ def test_first_look_reads_two_days_and_later_only_whats_new():
     assert st["messages"][1]["pressing"] == "client problem" and st["messages"][1]["body"]   # kept: it gets a draft
     fake.sent.clear()
     st = run(fake, labeller([]))                                     # nothing new: no FETCH at all
-    assert [c[1] for c in fake.sent if c[0] == "UID"] == ["SEARCH", "SEARCH"]   # inbox + Sent; no FETCH and len(st["messages"]) == 2
+    # inbox, what's still in it (the open list), Sent, Sent's replies (the open list); no FETCH
+    assert [c[1] for c in fake.sent if c[0] == "UID"] == ["SEARCH", "SEARCH", "SEARCH", "SEARCH"] and len(st["messages"]) == 2
 
 
 def test_a_new_uidvalidity_starts_over():
@@ -302,12 +303,16 @@ def _seeded(monkeypatch, alerts=None):
 def test_only_pressing_new_mail_alerts_and_alerts_false_keeps_it_quiet(monkeypatch):
     entry = _seeded(monkeypatch)
     out = mod.summary({"yt": entry}, Ctx())
-    assert [p["title"] for p in out["problems"]] == ["Acme: client problem from Sam Carter"]  # not the first look's
+    assert [p["title"] for p in out["problems"]] == ["Acme: client problem from Sam Carter",   # not the first look's,
+                                                     "Acme (alex@example.com): 1 email waiting on you"]   # quiet
     assert out["problems"][0]["quiet"] is False and out["problems"][0]["key"] == "msg-77-2"
     assert "2:41 PM PDT" in out["problems"][0]["detail"]
+    assert out["problems"][1]["quiet"] is True and out["problems"][1]["detail"].startswith("Customer: Ann, New logo?")
     later = NOW + dt.timedelta(hours=mod.ALERT_HOURS + 1)
     monkeypatch.setattr(mod, "_now", lambda: later)
-    assert mod.summary({"yt": entry}, Ctx())["problems"] == []
+    # past its push: the client problem joins the quiet list of what still waits (unanswered, still in the inbox)
+    assert [p["title"] for p in mod.summary({"yt": entry}, Ctx())["problems"]] == [
+        "Acme (alex@example.com): 2 emails waiting on you"]
     monkeypatch.setattr(mod, "_now", lambda: NOW)
     assert mod.summary({"yt": {**entry, "alerts": False}}, Ctx())["problems"][0]["quiet"] is True
 
@@ -316,14 +321,16 @@ def test_page_groups_by_company_with_pacific_times(monkeypatch):
     entry = _seeded(monkeypatch)
     sec = mod.details({"yt": entry}, Ctx())[0]
     assert sec["title"] == "Acme · alex@example.com" and "read only" in sec["facts"][0]
-    assert [i["name"] for i in sec["items"]] == ["✉ New email from alex@example.com", "🧹 Clean up the inbox now",
+    assert [i["name"] for i in sec["items"]] == ["✉ New email from alex@example.com", "📌 Reply: Website form broken",
+                                                 "📌 Customer: New logo?", "🧹 Clean up the inbox now",
                                                  "50% off", "New logo?", "Website form broken", "old"]
     assert sec["items"][0]["actions"][0]["id"] == "compose" and "ask" in sec["items"][0]["actions"][0]
-    assert sec["items"][1]["actions"][0]["id"] == "scan"
-    logo = sec["items"][3]
+    assert [a["id"] for a in sec["items"][1]["actions"]] == ["done", "dismiss"]
+    assert sec["items"][3]["actions"][0]["id"] == "scan"
+    logo = sec["items"][5]
     assert logo["facts"][0] == "Customer request · Ann · Fri Oct 23, 2:50 PM PDT"
     assert "https://example.com/client/requests/new" in logo["facts"][1] and logo["actions"] == []
-    assert sec["items"][4]["state"] == "warn"
+    assert sec["items"][6]["state"] == "warn"
 
 
 def test_morning_note_counts_by_label_and_lists_what_needs_him(monkeypatch):
@@ -434,7 +441,7 @@ def test_a_good_read_clears_the_refusal():
     assert "refused" not in run(FakeIMAP(), labeller([]))
 
 
-def test_morning_lists_needs_you_from_the_last_3_days_but_counts_only_24_h(monkeypatch):
+def test_morning_keeps_listing_what_still_waits_but_counts_only_24_h(monkeypatch):
     fake = FakeIMAP({1: ("20-Oct-2026 09:00:00 -0700", raw("Old", "x"))})
     run(fake, labeller([{"id": 1, "label": "Needs reply", "summary": "too old"}]), now=NOW - dt.timedelta(days=1))
     fake.messages.update({
@@ -450,8 +457,10 @@ def test_morning_lists_needs_you_from_the_last_3_days_but_counts_only_24_h(monke
     monkeypatch.setattr(mod, "_now", lambda: NOW)
     lines = mod.morning({"yt": ENTRY}, Ctx())["lines"]
     assert lines[0] == "- **Acme**: 1 newsletter (24 h)"                # counts: 24 h only
-    assert lines[1:] == ["    - ⚠ Deadline (legal notice): CAGEREVIEW@DLA.MIL, CAGE review (Wed)"]
-    assert "Ancient" not in "\n".join(lines) and "Old" not in "\n".join(lines)
+    # 0.14.0: an unanswered email still in the inbox stays listed past 3 days; one no longer in it (Ancient) doesn't
+    assert lines[1:] == ["    - ⚠ Deadline (legal notice): CAGEREVIEW@DLA.MIL, CAGE review (Wed)",
+                         "    - Reply: Sam Carter, Old (Tue)"]
+    assert "Ancient" not in "\n".join(lines)
 
 
 def test_morning_lists_only_what_he_must_act_on_one_short_line_each(monkeypatch):

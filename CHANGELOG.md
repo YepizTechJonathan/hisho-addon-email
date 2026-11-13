@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.14.0
+
+- Mail that waits on the owner stays in front of them, whatever its age. Before, an email was only ever looked at if it
+  arrived after the mailbox was set up (the first look read 2 days), and Today.md listed what needed the owner for
+  3 days; anything older still sitting in the inbox was never mentioned (the owner found old emails needing them that
+  Hisho had said nothing about). Now:
+  - **Inbox review**: every email still in the inbox that the clean-up's header sort didn't call clutter (and that
+    isn't a job board's alert) is read once (BODY.PEEK, read only), newest first, about 30 per poll per mailbox, and
+    a Claude with no tools says whether a specific action by the owner is still open (a reply, a payment, a form, a
+    decision, an appointment) and what it is. Receipts, statements, notices, past events and scams don't count.
+  - **The open list**: those, and every inbox email the labeller said needs the owner, stay listed until a reply is in
+    Sent (the whole Sent folder is read once for this, headers only), the email leaves the inbox (archived or deleted:
+    handled), or the owner presses **Done** or **Not needed** on the Email page. Nothing changes in the mailbox.
+  - Shown on the Email page (📌 on top, with Done / Not needed), in Today.md's Email section (every open one, oldest
+    included, with how long it has waited and any due date), and as one quiet Needs you item per mailbox ("3 emails
+    waiting on you", never pushed; a pressing email still pushes on its own), which also reaches Home Assistant and
+    the brief. "I know" on it holds until another email joins.
+  - Other folders (Snoozed, filters, possibly misfiled in Spam) are listed for 3 days as before.
+
 ## 0.13.1
 
 - No personal names or addresses again (0.13.0 brought some back): made-up examples in the tests, notes and the

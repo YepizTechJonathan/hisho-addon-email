@@ -40,8 +40,13 @@ Reads your company inboxes, tells you what needs you, and drafts replies; **noth
 - **Add-ons > Email** lists mail by company (sender, subject, label, summary, time in your time zone). The page
   and the Approvals page show only on your own devices or with Core's token, and their contents are never given
   to Claude through Hisho's MCP tools.
-- **Today.md** gets an Email section: per company, the last 24 hours by label and the unanswered emails of the last
-  3 days that need you. Your phone hears only about what is **pressing** (a client problem, a deadline within 48
+- **Still waiting on you**: every email still in the inbox is looked at once, however old (mail that was there before
+  Hisho, too: about 30 per poll, read only), and each one that needs something from you (a reply, a payment, a form, a
+  decision, an appointment) stays listed until you answer it (your reply in Sent), archive or delete it, or press
+  **Done** / **Not needed** on this add-on's page. Receipts, statements, notices and things already past don't count.
+- **Today.md** gets an Email section: per company, the last 24 hours by label and every email still waiting on you
+  (with how long it has waited); Needs you gets one quiet line per mailbox ("3 emails waiting on you"), which Home
+  Assistant shows too. Your phone hears only about what is **pressing** (a client problem, a deadline within 48
   hours, a payment or legal notice); `alerts: false` keeps a mailbox to the page and Today.md.
 - **Personal mailboxes** (`personal`, on for company Personal) are sorted for a person, with no reply drafts unless
   `drafts: true`, and put a **job search** first: recruiters, interview requests, application updates and job alerts
