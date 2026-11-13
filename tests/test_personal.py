@@ -166,9 +166,11 @@ def test_a_push_only_when_someone_waits_on_a_reply(mod):
 
 def test_job_mail_is_never_cleaned_and_comes_first_on_the_page(mod):
     jobs_state(mod)
-    clean = {"cats": {"3": {"group": "Jobs", "from_addr": "alerts@jobboard.example"}}}
-    assert mod.never_clean({"group": "Newsletters", "from_addr": "alerts@jobboard.example"},
-                           {"label": "Job search"}, clean) == "Job search"
+    clean = {"cats": {"3": {"group": "Jobs", "from_addr": "alerts@jobboard.example", "subject": "Your application was viewed"}}}
+    assert mod.never_clean({"group": "Newsletters", "from_addr": "pat.lee@staffing.example"},
+                           {"label": "Job search"}, clean) == "Job search"          # a person about a job: never
+    assert mod.never_clean({"group": "Newsletters", "from_addr": "alerts@jobboard.example", "subject": "New jobs"},
+                           {"label": "Job search"}, clean) == ""   # a board's alert: may go (only once a week old, 0.16.0)
     assert mod.never_clean(clean["cats"]["3"], None, clean) == "not clutter"   # the header sort's Jobs group stays
     items = mod.details({"home": {**GMAIL}}, None)[0]["items"]
     names = [i["name"] for i in items if i["id"] not in ("new", "cleanup") and not i["id"].startswith("open-")]

@@ -179,7 +179,8 @@ def test_never_offered_whatever_the_labeller_or_sorter_says():
     clean = st["cleanup"]
     for label in mod.NEVER_CLEAN:
         m = {"uid": 1, "label": label}
-        assert mod.never_clean({**clean["cats"]["1"]}, m, clean) == label
+        c = {**clean["cats"]["1"], **({"from_addr": "pat.lee@staffing.example"} if label == mod.JOB else {})}
+        assert mod.never_clean(c, m, clean) == label   # a board's automated job alert: see the 0.16.0 test
     assert mod.never_clean(clean["cats"]["2"], {"uid": 2, "label": "Newsletter", "pressing": "legal notice"}, clean) == "pressing"
     assert mod.never_clean(clean["cats"]["6"], None, clean) == "someone you wrote to"
     assert mod.never_clean(clean["cats"]["7"], None, clean) == "not clutter"
@@ -349,3 +350,29 @@ def test_gmail_important_gets_clean_up_cards_only_for_mail_in_no_other_label(mon
     assert mod.cleanable("[Gmail]/Important")
     # read only throughout: EXAMINE and fetches, nothing that changes the mailbox
     assert not [c for c in box.cmds if c[0] in ("SELECT", "STORE", "EXPUNGE", "COPY", "MOVE")]
+
+
+# ── 0.16.0: a job board's alert goes once it is a week old ───────────────
+
+def test_week_old_job_alerts_are_offered_even_from_a_kept_sender_but_never_about_you(monkeypatch):
+    monkeypatch.setattr(mod, "waiting_cards", lambda: set())
+    old, new = "Mon, 2 Nov 2026 09:00:00 -0800", "Sat, 24 Oct 2026 09:00:00 -0700"
+    box = Box({
+        21: mail("Acme is hiring a Software Engineer", sender="LinkedIn Job Alerts <jobalerts-noreply@linkedin.com>", date="Fri, 16 Oct 2026 09:00:00 -0700"),
+        22: mail("New jobs near you", sender="ZipRecruiter <alerts@ziprecruiter.com>", date=new),        # 2 days old
+        23: mail("Your application was viewed", sender="Indeed <donotreply@match.indeed.com>", date="Fri, 16 Oct 2026 09:00:00 -0700"),
+        24: mail("Jane sent you a message", sender="LinkedIn <messages-noreply@linkedin.com>", date="Fri, 16 Oct 2026 09:00:00 -0700"),
+        25: mail("Let's talk about the role", sender="Pat Lee <pat.lee@staffing.example>", date="Fri, 16 Oct 2026 09:00:00 -0700"),
+    }, SENT)
+    groups = {"Acme is hiring a Software Engineer": ("Jobs", "listing"), "New jobs near you": ("Jobs", "listings"),
+              "Your application was viewed": ("Jobs", "status"), "Jane sent you a message": ("Jobs", "inmail"),
+              "Let's talk about the role": ("Jobs", "recruiter")}
+    st = mod.load_state("pp")
+    st["cleanup"] = {"keep_senders": ["jobalerts-noreply@linkedin.com", "alerts@ziprecruiter.com"]}
+    mod.save_state("pp", st)
+    poll(box, sorter(groups))
+    (card,) = [c for c in mod.proposals({"pp": PP}, Ctx()) if c["action"]["type"] == "email.trash"]
+    assert [(it["uid"], it["group"]) for it in card["action"]["payload"]["items"]] == [(21, "Job alerts")]
+    assert card["title"].endswith("1 email (1 job alerts)")
+    assert mod.job_alert({"from_addr": "jobalerts-noreply@linkedin.com", "group": "Jobs", "subject": "x"},
+                         {"label": "Job search", "pressing": "reply"}) is False

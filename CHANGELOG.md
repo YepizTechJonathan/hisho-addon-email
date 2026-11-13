@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.16.0
+
+- A job board's automated alert (LinkedIn Job Alerts, ZipRecruiter, Indeed, Monster...) goes on a clean-up card once it
+  is a week old, even from a sender kept for the job hunt; shown as "Job alerts" on the card. Never one about the owner
+  (an application, an interview, an offer, a message from a person, LinkedIn InMail), never one flagged pressing, never
+  mail from a person about a job.
+
 ## 0.15.1
 
 - The 0.15.0 notes without a personal address (the release goes in the Souko image).

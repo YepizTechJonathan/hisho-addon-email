@@ -82,6 +82,7 @@ DRAFTS_PER_POLL = 3       # Claude calls per poll for drafts
 SENT_KEEP = 2000          # Sent references remembered
 # clean-up (0.3.0): a daily "Clean up" card per mailbox on the Approvals list
 CLEAN_GROUPS = ("Newsletters", "Promotions", "Junk", "Notifications")   # "Jobs" and "Keep" never go
+CARD_GROUPS = (*CLEAN_GROUPS, "Job alerts")   # a card's sections: the clutter groups, then week-old job alerts
 NEVER_CLEAN = ("Needs reply", "Customer request", "Deadline", "Bill or invoice", "Job search")
 CLEAN_MIN_DAYS = 1        # the owner has had a day to see it (Today.md)
 NOTICE_MIN_DAYS = 2       # verification codes / automated notices: two
@@ -493,10 +494,34 @@ def sort_for_cleanup(entry: dict[str, Any], clean: dict[str, Any], kept: list[di
     return clean
 
 
+JOB_ALERT_DAYS = 7        # a job board's alert: kept a week to apply, then clean-up may offer it (0.16.0)
+#: a job board's email about the owner himself (an application, an interview, a message from a person): never an alert
+_JOB_PERSONAL = re.compile(r"\b(interview|appl(y|ied|ication)s?\b.*\b(update|status|received|viewed)|your application|"
+                           r"offer|assessment|next steps?|schedul|invit|messaged you|sent you a message|new message|"
+                           r"replied|viewed your|wants to (talk|connect|chat|meet))", re.I)
+
+
+def job_alert(c: dict[str, Any], m: dict[str, Any] | None = None) -> bool:
+    """A job board's automated alert (listings, "X is hiring"), not about anything the owner did or anyone writing to
+    him: ZipRecruiter, LinkedIn Job Alerts, Indeed... LinkedIn's messages-noreply (InMail) never counts."""
+    addr = str(c.get("from_addr") or "").lower()
+    if not addr or addr.startswith("messages-noreply@") or not job_bot(addr):
+        return False
+    domain = addr.partition("@")[2]
+    if not (c.get("group") in ("Jobs", "Job alerts") or (m or {}).get("label") == JOB
+            or any(domain == d or domain.endswith("." + d) for d in JOB_BOARDS)):
+        return False   # an automated sender, but nothing about jobs
+    if m is not None and (m.get("pressing") or m.get("label") not in (None, JOB, "Newsletter", "Junk")):
+        return False
+    return c.get("group") in (*CLEAN_GROUPS, "Jobs", "Job alerts") and not _JOB_PERSONAL.search(str(c.get("subject") or ""))
+
+
 def never_clean(c: dict[str, Any], m: dict[str, Any] | None, clean: dict[str, Any]) -> str:
-    """Why this email may never go on a clean-up card ('' = it may)."""
+    """Why this email may never go on a clean-up card ('' = it may). A job board's alert may go once it is a week old,
+    even from a sender you keep (they were kept for the job hunt, not for ever)."""
+    alert = job_alert(c, m)
     if m is not None:
-        if m.get("label") in NEVER_CLEAN:
+        if m.get("label") in NEVER_CLEAN and not alert:
             return m["label"]
         if m.get("pressing"):
             return "pressing"
@@ -504,6 +529,8 @@ def never_clean(c: dict[str, Any], m: dict[str, Any] | None, clean: dict[str, An
         return "also in " + ", ".join(c["labels"][:3])   # Gmail: Trash would take it out of these too
     if c.get("from_addr") and c["from_addr"] in set(clean.get("contacts") or []):
         return "someone you wrote to"
+    if alert:
+        return ""
     if c.get("from_addr") and c["from_addr"] in set(clean.get("keep_senders") or []):
         return "a sender you keep"
     if c.get("group") not in CLEAN_GROUPS:
@@ -539,11 +566,13 @@ def make_cleanup_card(name: str, entry: dict[str, Any], clean: dict[str, Any], k
             continue
         if c.get("message_id") and c["message_id"] in (skip_ids or set()):
             continue   # also in the inbox: the inbox's card offers it
-        age = NOTICE_MIN_DAYS if c["group"] == "Notifications" else CLEAN_MIN_DAYS
+        age = JOB_ALERT_DAYS if job_alert(c, by_uid.get(uid)) else NOTICE_MIN_DAYS if c["group"] == "Notifications" \
+            else CLEAN_MIN_DAYS
         if c["received"] > (now - dt.timedelta(days=age)).isoformat():
             continue
         items.append({"uid": uid, "message_id": c.get("message_id") or "", "from": c["from"], "from_addr": c["from_addr"],
-                      "subject": c["subject"], "about": c.get("about") or "", "date": c["received"][:10], "group": c["group"]})
+                      "subject": c["subject"], "about": c.get("about") or "", "date": c["received"][:10],
+                      "group": "Job alerts" if job_alert(c, by_uid.get(uid)) else c["group"]})
     items = items[:cleaner.MAX_ITEMS]
     day, _h = _owner_day(now)
     open_cards = set(clean.get("cards") or {}) & (waiting or set())
@@ -559,7 +588,7 @@ def make_cleanup_card(name: str, entry: dict[str, Any], clean: dict[str, Any], k
 def digest(items: list[dict[str, Any]]) -> list[dict[str, str]]:
     """The card's text: per group, per sender, how many and what they were about."""
     out = []
-    for g in CLEAN_GROUPS:
+    for g in CARD_GROUPS:
         in_g = [it for it in items if it["group"] == g]
         if not in_g:
             continue
@@ -577,7 +606,7 @@ def digest(items: list[dict[str, Any]]) -> list[dict[str, str]]:
 def _cleanup_card(name: str, entry: dict[str, Any], key: str, card: dict[str, Any], validity: str,
                   folder: str = "INBOX") -> dict[str, Any]:
     items = card["items"]
-    counts = ", ".join(f"{sum(1 for i in items if i['group'] == g)} {g.lower()}" for g in CLEAN_GROUPS
+    counts = ", ".join(f"{sum(1 for i in items if i['group'] == g)} {g.lower()}" for g in CARD_GROUPS
                        if any(i["group"] == g for i in items))
     company = entry.get("company") or name
     return {"key": key, "company": company,
