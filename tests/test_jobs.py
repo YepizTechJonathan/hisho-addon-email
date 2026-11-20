@@ -233,3 +233,14 @@ def test_a_poll_reads_job_mail_again_and_rates_it(mod):
     m = {m["uid"]: m for m in mod.load_state("home")["messages"]}[9]
     assert asked and "Junior Software Developer [L1]" in asked[0]
     assert m["jobs"][0]["url"] == "https://www.indeed.com/viewjob?jk=1&from=alert" and m["jobs_for"] == mod_key()
+
+
+def test_an_unknown_sender_with_several_jobs_is_an_alert_not_a_person(mod):
+    note_file()
+    m = _rated(1, "Junior System Administrator", "Asm", "good", frm="Job Digest", addr="digest-team@jobsite.example")
+    m["from_addr"] = "kim@jobsite.example"
+    m["jobs"].append({**m["jobs"][0], "key": key("Help Desk", "Asm"), "title": "Help Desk"})
+    mod.save_state("home", {"status": "ok", "uidvalidity": "1", "messages": [m]})
+    lines = mod.job_lines({"home": {**GMAIL}}, NOW, ZoneInfo("America/Los_Angeles"))
+    assert lines[1] == "    - ⭐ **2 good matches**"
+    assert mod.kind({"label": "Job search", "from_addr": "kimble@kimblegroup.com"}) == "jobalert"

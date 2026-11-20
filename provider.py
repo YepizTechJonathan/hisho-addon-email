@@ -1819,7 +1819,8 @@ _AUTOMATED = re.compile(r"^(no-?reply|do-?not-?reply|donotreply|notifications?|n
 
 #: job boards and their mailers: what they send is an alert or a listing, counted, unless someone waits on a reply
 JOB_BOARDS = ("linkedin.com", "indeed.com", "indeedemail.com", "ziprecruiter.com", "monster.com", "glassdoor.com",
-              "joinhandshake.com", "jobs2careers.com", "dice.com", "usajobs.gov", "careerbuilder.com", "simplyhired.com")
+              "joinhandshake.com", "jobs2careers.com", "dice.com", "usajobs.gov", "careerbuilder.com", "simplyhired.com",
+              "kimblegroup.com", "recruitmilitarymail.org", "recruitmilitarymail.net")
 _BOT_WORDS = re.compile(r"no-?reply|do-?not-?reply|alerts?|notifications?|updates?|news|digest|marketing|mailer", re.I)
 
 
@@ -2427,7 +2428,8 @@ def job_board(entries: dict[str, dict[str, Any]], now: dt.datetime) -> tuple[lis
         for m in every:
             if m.get("label") != JOB or m["received"] < recent:
                 continue
-            if kind(m) == "job":
+            # a sender the board list doesn't know (Kimble Group) is still an alert when its email held several jobs
+            if kind(m) == "job" and (m.get("pressing") or len(m.get("jobs") or []) < 2):
                 if not m.get("answered"):
                     people.append(m)
             else:

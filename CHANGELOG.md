@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.19.1
+
+- Kimble Group and RecruitMilitary count as job boards. A job email from a sender the list doesn't know is treated
+  as an alert, not a person, once it turns out to hold several jobs, so its good matches show (Kimble's were hidden
+  behind its "person" line).
+
 ## 0.19.0
 
 - The job hunt picks the jobs that fit. What fits is the owner's own note in the vault (`job_profile`, default
