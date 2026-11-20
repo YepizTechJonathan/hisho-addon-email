@@ -1315,6 +1315,16 @@ def _now() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc)
 
 
+def mark_gone(msgs: list[dict[str, Any]], present: set[int], now: dt.datetime) -> None:
+    """Mark the messages no longer in their folder (deleted, archived, moved by the owner or a filter) ``gone``, with
+    when Hisho noticed; one that is back (a UID is never reused, but a server may say so once) loses the mark."""
+    for m in msgs:
+        if m["uid"] in present:
+            m.pop("gone", None)
+        elif not m.get("gone"):
+            m["gone"] = now.isoformat(timespec="seconds")
+
+
 def _poll_one(name: str, entry: dict[str, Any], ctx: Any, *, now: dt.datetime | None = None,
               ask: Callable[[str], str] | None = None, connect_fn: Callable[..., Any] | None = None,
               first_days: int = FIRST_LOOK_DAYS, known: dict[str, dict[str, Any]] | None = None,
@@ -1368,15 +1378,20 @@ def _poll_one(name: str, entry: dict[str, Any], ctx: Any, *, now: dt.datetime | 
                 fresh.update(moved_from=was.get("folder") or "INBOX", first_look=True, draft_tries=2)
                 fresh.pop("body", None)
             kept.append(fresh)
+        # the folder is still open (read only): which emails are still there. One the owner deleted or moved away
+        # is marked gone and drops out of the page, Today.md, alerts and cards (a moved one turns up where it went)
+        typ, data = conn.uid("SEARCH", None, "ALL")
+        present = sorted(int(u) for u in ((data or [b""])[0] or b"").split()) if typ == "OK" else None
+        if present is not None:
+            mark_gone(kept, set(present), now)
         backfill(conn, kept, [m for m in kept if _wants_draft(m, now, entry) or _wants_note(m, now, entry)])
         review, backlog = state.get("review") or {}, []
-        if reviewing:   # the inbox is still open (read only): which emails are still there, and the next to review
+        if reviewing:   # the inbox's next emails to review
             if review.get("validity") != validity:
                 review = {"validity": validity, **{k: review[k] for k in ("replies", "reply_threads", "replies_uid")
                                                    if k in review}}
-            typ, data = conn.uid("SEARCH", None, "ALL")
-            if typ == "OK":
-                review["present"] = sorted(int(u) for u in ((data or [b""])[0] or b"").split())
+            if present is not None:
+                review["present"] = present
             backlog = review_candidates(state.get("cleanup") or {}, review, kept)
             got = _fetch_parts(conn, [c["uid"] for c in backlog], f"(UID BODY.PEEK[]<0.{FETCH_BYTES}>)") if backlog else {}
             backlog = [{**c, "body": parse_message(got[c["uid"]])["body"]} for c in backlog if c["uid"] in got]
@@ -1657,7 +1672,7 @@ def poll(name: str, entry: dict[str, Any], ctx: Any, *, now: dt.datetime | None 
         return _Shared(held["conn"])
     def others(sname: str) -> dict[str, dict[str, Any]]:
         """The mailbox's messages in its other folders, by Message-ID: a message moved here is recognised."""
-        return {m["message_id"]: m for m in _all_messages(name, entry, dedupe=False)
+        return {m["message_id"]: m for m in _all_messages(name, entry, dedupe=False, gone=True)
                 if m.get("message_id") and m["_stream"] != sname}
     try:
         st = _poll_one(name, {**entry, "folder": entry.get("folder") or "INBOX"}, ctx, now=now, ask=ask,
@@ -1692,13 +1707,15 @@ def poll(name: str, entry: dict[str, Any], ctx: Any, *, now: dt.datetime | None 
     return load_state(name)
 
 
-def _all_messages(name: str, entry: dict[str, Any], dedupe: bool = True) -> list[dict[str, Any]]:
+def _all_messages(name: str, entry: dict[str, Any], dedupe: bool = True, gone: bool = False) -> list[dict[str, Any]]:
     """Every folder's messages, each marked with its folder and its stream (for ids and keys). A message seen in two
-    folders (moved after Hisho read it) counts once, where it was seen last."""
+    folders (moved after Hisho read it) counts once, where it was seen last. ``gone``: also the ones no longer in
+    their folder (only to recognise a moved message; nothing shown counts them)."""
     out = []
     for sname, folder in streams(name, entry):
         for m in load_state(sname).get("messages") or []:
-            out.append({**m, "folder": folder, "_stream": sname})
+            if gone or not m.get("gone"):
+                out.append({**m, "folder": folder, "_stream": sname})
     if not dedupe:
         return out
     last: dict[str, dict[str, Any]] = {}
@@ -2033,7 +2050,7 @@ def _pressing(entry: dict[str, Any], state: dict[str, Any], now: dt.datetime) ->
     cutoff = (now - dt.timedelta(hours=ALERT_HOURS)).isoformat()
     return [m for m in state.get("messages") or []
             if m.get("pressing") and not m.get("first_look") and not m.get("answered") and not m.get("junk")
-            and not m.get("scam")
+            and not m.get("scam") and not m.get("gone")
             and m["received"] >= cutoff]
 
 
@@ -2468,20 +2485,25 @@ def proposals(entries: dict[str, dict[str, Any]], ctx: Any) -> list[dict[str, An
     for name, entry in entries.items():
         company = entry.get("company") or name
         recent = (now - dt.timedelta(days=DRAFT_DAYS)).isoformat()
+        live = {m["message_id"] for m in _all_messages(name, entry, dedupe=False) if m.get("message_id")}
         for sname, folder in streams(name, entry):
-            out += _stream_cards(name, entry, company, sname, folder, load_state(sname), recent, tz)
+            out += _stream_cards(name, entry, company, sname, folder, load_state(sname), recent, tz, live)
         for c in load_state(name).get("compose") or []:
             out.append(_compose_card(name, entry, c))
     return out
 
 
 def _stream_cards(name: str, entry: dict[str, Any], company: str, sname: str, folder: str, st: dict[str, Any],
-                  recent: str, tz: Any) -> list[dict[str, Any]]:
-    """One folder's cards; the inbox's keys are the mailbox's own (``reply:<mailbox>:...``), a folder's carry it."""
+                  recent: str, tz: Any, live: set[str] | None = None) -> list[dict[str, Any]]:
+    """One folder's cards; the inbox's keys are the mailbox's own (``reply:<mailbox>:...``), a folder's carry it.
+    ``live``: the Message-IDs still in one of the mailbox's folders. An email gone from here keeps its card while it
+    was only moved (archived: still to answer), and loses it once it is in none of them (deleted)."""
     out = []
-    events = {m["uid"]: card for m in st.get("messages") or []
+    msgs = [m for m in st.get("messages") or []
+            if not m.get("gone") or (live is not None and m.get("message_id") in live)]
+    events = {m["uid"]: card for m in msgs
               if (card := _event_card(name, entry, company, sname, folder, st, m, recent, tz))}
-    for m in st.get("messages") or []:
+    for m in msgs:
         if m.get("answered") or m["received"] < recent or m.get("junk") or m.get("moved_from"):
             continue   # Spam: shown, never carded; a moved copy: its card (if any) comes from where it was first read
         link = {"addon": "email", "entry": name, "item": _item_id({**m, "folder": folder})}
@@ -2504,7 +2526,7 @@ def _stream_cards(name: str, entry: dict[str, Any], company: str, sname: str, fo
                             f"{company}: {_summary(m, entry)} ({_sender(m)}, {when(m['received'], tz)})", 400)}},
                         "pressing": bool(m.get("pressing")) and not m.get("first_look")})
     out += events.values()
-    for m in st.get("messages") or []:
+    for m in msgs:
         note = m.get("note") or {} if not m.get("moved_from") else {}
         for n, c in enumerate(note.get("cards") or []):
             atype = {"today_add": "today_add", "new_email": "email.send"}.get(c["kind"], "email.setting")

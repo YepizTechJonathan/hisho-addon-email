@@ -285,6 +285,27 @@ def test_mail_moved_to_archive_is_recognised_not_labelled_drafted_carded_or_push
     assert len(lines) == 1 and "in Archive" in lines[0]   # once, where it is now
 
 
+def test_mail_the_owner_deleted_leaves_today_alerts_cards_and_the_page():
+    # 0.18.3: a deleted email (in Trash, which is never read) stayed listed for two weeks: every folder's poll now
+    # checks which UIDs are still there
+    box, calls = zoho_box(), []
+    box.folders["Notification"] = {7: REAL}   # a filter filed it; pressing, drafted, on Today.md
+    poll(box, ask=labeller(calls))
+    assert any("contact form" in l for l in mod.morning({"yt": YT}, Ctx())["lines"])
+    assert any("contact form" in c["title"] for c in mod.proposals({"yt": YT}, Ctx()))
+    box.folders["Notification"], box.folders["Trash"] = {}, {1: REAL}
+    later = NOW + dt.timedelta(minutes=5)
+    poll(box, now=later, ask=labeller(calls))
+    kept = mod.load_state("yt--notification")["messages"]
+    assert kept[0]["gone"] == later.isoformat(timespec="seconds")   # kept (a moved copy is still recognised), marked
+    assert not any("contact form" in l for l in mod.morning({"yt": YT}, Ctx())["lines"])
+    assert not [p for p in mod.summary({"yt": YT}, Ctx())["problems"] if "client problem" in p["title"]]
+    assert not [c for c in mod.proposals({"yt": YT}, Ctx()) if "contact form" in c["title"]]
+    assert not [i for d in mod.details({"yt": YT}, Ctx()) for i in d["items"] if "contact form" in i["name"]]
+    assert {c[1] for c in box.cmds if c[0] == "EXAMINE"} & {"Trash"} == set()   # still never read
+    assert "SELECT" not in [c[0] for c in box.cmds]
+
+
 def test_clean_up_scope_is_the_inbox_the_filters_and_spam(monkeypatch):
     box = zoho_box()
     for f in ("Archive", "Spam", "Clients/Harbor Bakery", "Snoozed"):

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.18.3
+
+- Mail the owner deleted or moved away leaves Today.md, the page, the phone alerts and the Approvals cards within one
+  poll. Every folder's poll now asks which UIDs are still there (read only, `UID SEARCH ALL`), not only the inbox's:
+  a deleted email in Notification, Spam or a label, or a pressing one, stayed listed for up to two weeks. An email
+  only moved (archived) keeps its reply card and shows where it went; one deleted (Trash is never read) loses it.
+
 ## 0.18.2
 
 - The inbox review (what stays on the "waiting on you" list) uses the same government-contracting rules as the sort
