@@ -52,6 +52,10 @@ Reads your company inboxes, tells you what needs you, and drafts replies; **noth
   `drafts: true`, and put a **job search** first: recruiters, interview requests, application updates and job alerts
   lead Today.md and the page, are never cleaned up, a likely job scam is flagged, and only someone waiting on your
   reply pushes to the phone.
+- **Good job matches**: say what jobs you want in a vault note (`job_profile`, default
+  `Companies/Personal/Job search.md`). Every listing in your job mail is rated against it (good, maybe, not a fit,
+  looks fake); the good ones lead Today.md with their links, a Job search card sits on the overview, and the page
+  lists them all with **Applied** and **Not for me**, which are written into the same note.
 - **Events from email**: an email that names a date and time you're invited to or must attend gets an "Add to your
   calendar" card on Approvals; Approve puts it on your Hisho calendar as shown (Edit first to change it).
 - Messages stay on the Core machine (`~/.local/state/hisho/addons/email/`), never in the vault.
@@ -78,6 +82,7 @@ mailbox shows "waiting for app password": no error and no alert.
   - `keep_words` (str, optional)
   - `alerts` (bool, optional)
   - `gov_contractor` (bool, optional)
+  - `job_profile` (str, optional)
   - `personal` (bool, optional)
   - `drafts` (bool, optional)
   - `request_form` (str, optional)

@@ -149,10 +149,10 @@ def test_job_mail_is_sorted_first_with_its_own_push_and_a_scam_flag(mod):
 def test_today_lists_the_job_hunt_first(mod):
     jobs_state(mod)
     lines = mod.morning({"home": {**GMAIL}}, None)["lines"]
-    assert lines[0] == "- **Job search**"
+    assert lines[0] == "- **Job search** ([[Companies/Personal/Job search|what you want]])"
     assert lines[1].startswith("    - **waiting on your reply**: Pat Recruiter, Interview Tuesday?")
     assert lines[2].startswith("    - ⚠ looks like a scam: don't send money or ID: Hiring Desk")
-    assert lines[3] == "    - 2 job alerts: JobBoard Alerts 2 (Add-ons > Email)"
+    assert lines[3].startswith("    - 2 job board emails not sorted for you: write what jobs you want in")   # no note yet
     assert lines[4].startswith("- **Personal**")
     assert not any("Interview Tuesday" in l for l in lines[4:])   # once, in the job block
     assert any("Reply: Sam Friend" in l for l in lines[4:])
@@ -172,7 +172,7 @@ def test_job_mail_is_never_cleaned_and_comes_first_on_the_page(mod):
     assert mod.never_clean({"group": "Newsletters", "from_addr": "alerts@jobboard.example", "subject": "New jobs"},
                            {"label": "Job search"}, clean) == ""   # a board's alert: may go (only once a week old, 0.16.0)
     assert mod.never_clean(clean["cats"]["3"], None, clean) == "not clutter"   # the header sort's Jobs group stays
-    items = mod.details({"home": {**GMAIL}}, None)[0]["items"]
+    items = next(s for s in mod.details({"home": {**GMAIL}}, None) if s["title"] != "Job search")["items"]
     names = [i["name"] for i in items if i["id"] not in ("new", "cleanup") and not i["id"].startswith("open-")]
     assert names[:2] == ["Interview Tuesday?", "You're hired! Send your bank info"] or \
         set(names[:2]) == {"Interview Tuesday?", "You're hired! Send your bank info"}

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.19.0
+
+- The job hunt picks the jobs that fit. What fits is the owner's own note in the vault (`job_profile`, default
+  `Companies/Personal/Job search.md`): roles, where, lowest pay, never-show list. Each job email of the last two weeks
+  is read once more (read only) for its listings and their links, and Claude (no tools) rates every listing against
+  the note: good match, maybe, not a fit, or looks fake. Links come from the email only; Claude can only point at one
+  by number. A change to the note rates everything again.
+- Today.md's Job search block: people writing first (as before), then the good matches with their links, place, pay
+  and why, the maybes in a line, and how many were left out (not a fit, fake, or said no to). Nothing is deleted.
+- A Job search card on the overview and a Job search section first on the page, every listing with **Applied** and
+  **Not for me** (with an optional reason). Both buttons add a line at the end of the owner's note, where he sees them
+  and can delete one to undo it; the next ratings read them.
+- A job board alert holding a good or maybe job is never offered on a clean-up card. A person writing about a job
+  never was.
+
 ## 0.18.3
 
 - Mail the owner deleted or moved away leaves Today.md, the page, the phone alerts and the Approvals cards within one

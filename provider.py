@@ -51,6 +51,9 @@ _spec.loader.exec_module(drafter)
 _spec = importlib.util.spec_from_file_location("hisho_addon_email_autoconfig", Path(__file__).with_name("autoconfig.py"))
 mailconf = importlib.util.module_from_spec(_spec)   # finds a mailbox's servers from its address (Set up this mailbox)
 _spec.loader.exec_module(mailconf)
+_spec = importlib.util.spec_from_file_location("hisho_addon_email_jobs", Path(__file__).with_name("jobs.py"))
+jobs = importlib.util.module_from_spec(_spec)   # the job hunt: which listings fit the owner (his Job search note)
+_spec.loader.exec_module(jobs)
 
 LABELS = ("Needs reply", "Customer request", "Bill or invoice", "Deadline", "Newsletter", "Junk")
 NEEDS_YOU = ("Needs reply", "Customer request", "Deadline", "Bill or invoice", "Job search")   # Today.md lists these
@@ -331,6 +334,46 @@ def backfill(conn: Any, msgs: list[dict[str, Any]], need_body: list[dict[str, An
                 m.update(body=parsed["body"], auth_ok=parsed["auth_ok"], auth=parsed["auth"])
 
 
+LISTINGS_PER_POLL = 10    # job emails read again for their listings and links, per poll
+
+
+def read_listings(conn: Any, msgs: list[dict[str, Any]], now: dt.datetime) -> None:
+    """With the folder open (read only): the job emails of the last two weeks read once more for their listings and
+    links (``listing``, ``links``), which the rating reads (``rate_jobs``)."""
+    recent = (now - dt.timedelta(days=JOB_DAYS)).isoformat()
+    want = [m for m in msgs if m.get("label") == JOB and "listing" not in m and not m.get("gone")
+            and str(m.get("received") or "") >= recent][:LISTINGS_PER_POLL]
+    if not want:
+        return
+    got = _fetch_parts(conn, [m["uid"] for m in want], f"(UID BODY.PEEK[]<0.{FETCH_BYTES}>)")
+    for m in want:
+        if m["uid"] in got:
+            m["listing"], m["links"] = jobs.listing_text(email.message_from_bytes(got[m["uid"]], policy=email.policy.default))
+
+
+def rate_jobs(entry: dict[str, Any], kept: list[dict[str, Any]], ask: Callable[[str], str] | None,
+              state: dict[str, Any]) -> None:
+    """Rate the job emails' listings against the owner's Job search note (one Claude call a poll, a few emails each);
+    all of them again when he changes what he wants. Without the note nothing is rated (Today.md says where it goes)."""
+    note = jobs.read_note(entry)
+    key = jobs.note_key(note)
+    todo = jobs.to_rate(kept, key)[:jobs.MATCH_BATCH] if key else []
+    if not todo:
+        return
+    for m in todo:
+        t = m.get("jobs_try") or ["", 0]
+        m["jobs_try"] = [key, (int(t[1]) if t[0] == key else 0) + 1]
+    try:
+        got = jobs.rate(note, todo, ask or _claude)
+    except Exception as exc:  # noqa: BLE001 -- tried again next poll
+        state["claude_error"] = f"jobs: {str(exc)[:180]}"
+        return
+    for m in todo:
+        if m["uid"] in got:
+            m.update(jobs=got[m["uid"]], jobs_for=key)
+            m.pop("jobs_try", None)
+
+
 def read_sent(conn: Any, folder: str, before: dict[str, Any], now: dt.datetime) -> dict[str, Any]:
     """What the owner sent lately (read only, headers only): the ids those messages answer, and (to, subject) pairs."""
     typ, data = conn.select(mailbox(folder), readonly=True)
@@ -533,6 +576,8 @@ def never_clean(c: dict[str, Any], m: dict[str, Any] | None, clean: dict[str, An
     alert = job_alert(c, m)
     if m is not None and m.get("scam") and not m.get("answered"):
         return ""   # the labeller read it: a likely job scam (asks for money, ID, bank details...)
+    if m is not None and any(j.get("fit") in ("good", "maybe") for j in m.get("jobs") or []):
+        return "has a job that fits you"   # 0.19.0: an alert with a good or maybe listing is never offered
     if m is not None:
         if m.get("label") in NEVER_CLEAN and not alert:
             return m["label"]
@@ -1385,6 +1430,8 @@ def _poll_one(name: str, entry: dict[str, Any], ctx: Any, *, now: dt.datetime | 
         if present is not None:
             mark_gone(kept, set(present), now)
         backfill(conn, kept, [m for m in kept if _wants_draft(m, now, entry) or _wants_note(m, now, entry)])
+        if is_personal(entry) and not junk:
+            read_listings(conn, kept, now)
         review, backlog = state.get("review") or {}, []
         if reviewing:   # the inbox's next emails to review
             if review.get("validity") != validity:
@@ -1451,6 +1498,8 @@ def _poll_one(name: str, entry: dict[str, Any], ctx: Any, *, now: dt.datetime | 
             if m["uid"] in got:
                 m.update(got[m["uid"]])
     mark_answered(kept, state["sent"])
+    if is_personal(entry) and not junk:
+        rate_jobs(entry, kept, ask, state)
     # draft replies: newest first, a few per poll; each becomes a card on the Approvals list
     for m in sorted((m for m in kept if _wants_draft(m, now, entry) and m.get("body")), key=lambda m: m["received"],
                     reverse=True)[:DRAFTS_PER_POLL]:
@@ -2107,7 +2156,48 @@ def summary(entries: dict[str, dict[str, Any]], ctx: Any) -> dict[str, Any]:
         if waiting:
             problems.append(_open_problem(name, entry, company, waiting, now))
     state = "warn" if "error" in states else "unknown" if all(s in ("waiting", "starting") for s in states) else "ok"
-    return {"state": state, "headline": " · ".join(heads), "problems": problems}
+    out = {"state": state, "headline": " · ".join(heads), "problems": problems}
+    if any(is_personal(e) for e in entries.values()):
+        card = job_card(entries, now)
+        if card:
+            out["card"] = card
+    return out
+
+
+CARD_GOOD = 6   # good matches on the overview card
+
+
+def job_card(entries: dict[str, dict[str, Any]], now: dt.datetime) -> dict[str, Any] | None:
+    """The overview's Job search card: the good matches (each opens the listing), people writing, the maybes and how
+    many were left out."""
+    people, b, note = job_board(entries, now)
+    page, rows = "#/addons/email", []
+    if not people and not any(b.values()):
+        return None
+    if people:
+        waiting = sum(1 for m in people if m.get("pressing"))
+        rows.append({"label": "People writing about a job", "value": str(len(people)), "url": page,
+                     "state": "warn" if waiting else "ok",
+                     "detail": f"{waiting} waiting on your reply" if waiting else ", ".join(
+                         dict.fromkeys(_clean(_sender(m), 30) for m in people[:3]))})
+    if not jobs.note_key(note):
+        rows.append({"label": "Tell Hisho what jobs you want", "value": "", "url": page, "state": "warn",
+                     "detail": f"write it in {jobs.PROFILE} (your Hisho notes)"})
+        return {"title": "Job search", "rows": rows}
+    rows.append({"label": "Good matches", "value": str(len(b["good"])), "url": page, "state": "ok" if b["good"] else "",
+                 "detail": "jobs that fit what you want, from the last two weeks of job mail"})
+    for j in b["good"][:CARD_GOOD]:
+        rows.append({"label": _job_name(j), "value": "", "url": j.get("url") or page, "indent": True, "state": "ok",
+                     "detail": " · ".join(x for x in (j.get("place"), j.get("pay"), j.get("why"),
+                                                      f"{_clean(j['from'], 20)} {_short_day(j['received'], now, _tz())}") if x)})
+    if b["maybe"]:
+        rows.append({"label": "Maybe", "value": str(len(b["maybe"])), "url": page,
+                     "detail": "; ".join(_job_name(j) for j in b["maybe"][:3])})
+    left = len(b["no"]) + len(b["scam"]) + len(b["hidden"])
+    if left:
+        rows.append({"label": "Left out", "value": str(left), "url": page,
+                     "detail": f"{len(b['no'])} not a fit, {len(b['scam'])} look fake, {len(b['hidden'])} you said no to"})
+    return {"title": "Job search", "rows": rows}
 
 
 def _open_problem(name: str, entry: dict[str, Any], company: str, waiting: list[dict[str, Any]],
@@ -2277,43 +2367,133 @@ def details(entries: dict[str, dict[str, Any]], ctx: Any) -> list[dict[str, Any]
             facts.append(f"Sent folder: {st['sent']['error']} (answered mail can't be spotted)")
         out.append({"title": f"{company} · {entry.get('address')}", "entry": name,
                     "state": {"ok": "ok", "error": "warn"}.get(status, "unknown"), "facts": facts, "items": items})
-    return out
+    section = job_section(entries, now, tz)
+    return ([section] if section else []) + out
+
+
+JOB_ACTIONS = [{"id": "applied", "label": "Applied"},
+               {"id": "hide", "label": "Not for me", "ask": "Not for you: why? (optional, it helps the next picks)"}]
+
+
+def job_section(entries: dict[str, dict[str, Any]], now: dt.datetime, tz: Any) -> dict[str, Any] | None:
+    """The page's Job search section: every listing of the last two weeks, good matches first, each with Applied and
+    Not for me (both written in the owner's Job search note, where he can see and undo them)."""
+    personal = next((n for n, e in entries.items() if is_personal(e)), None)
+    if personal is None:
+        return None
+    people, b, note = job_board(entries, now)
+    if not people and not any(b.values()):
+        return None
+    facts = [f"What you want is your note {jobs.PROFILE} (Hisho notes). Change it and every job email is sorted again."]
+    if not jobs.note_key(note):
+        facts.append("That note is empty or missing, so nothing is sorted yet.")
+    else:
+        facts.append(f"Last two weeks: {len(b['good'])} good, {len(b['maybe'])} maybe, {len(b['no'])} not a fit, "
+                     f"{len(b['scam'])} look fake, {len(b['applied'])} applied, {len(b['hidden'])} you said no to"
+                     + (f"; {len(b['unrated'])} emails still being read" if b["unrated"] else "")
+                     + ". Job mail is never put on a clean-up card while it holds a good or maybe job.")
+
+    def item(j: dict[str, Any], icon: str, state: str, actions: list[dict[str, Any]]) -> dict[str, Any]:
+        where = " · ".join(x for x in (j.get("place"), j.get("pay")) if x)
+        return {"id": f"job-{j['key']}", "name": f"{icon} {_job_name(j)}", "url": j.get("url") or "", "state": state,
+                "facts": [x for x in (where, j.get("why"), f"{jobs.FIT_WORDS[j['fit']]} · from {j['from']}, "
+                          f"{when(j['received'], tz)}" + (f" · in {j['times']} alerts" if j.get("times", 1) > 1 else "")
+                          + (f" · you pressed {j['press']['what']} on {j['press']['day']}" if j.get("press") else "")) if x],
+                "actions": actions}
+    items = [item(j, "⭐", "ok", JOB_ACTIONS) for j in b["good"]]
+    items += [item(j, "❔", "up", JOB_ACTIONS) for j in b["maybe"]]
+    items += [item(j, "✅", "off", []) for j in b["applied"]]
+    items += [item(j, "⚠", "off", []) for j in b["scam"]]
+    items += [item(j, "·", "off", [JOB_ACTIONS[0]]) for j in b["no"] + b["hidden"]]
+    return {"title": "Job search", "entry": personal, "state": "ok", "facts": facts, "items": items}
 
 
 JOB_DAYS = 14   # Today.md's Job search block: the last two weeks (a recruiter may wait a few days)
 
 
-def job_lines(entries: dict[str, dict[str, Any]], now: dt.datetime, tz: Any) -> list[str]:
-    """Today.md's Job search block, first in the Email section: every person writing about a job (the ones waiting on
-    a reply first), likely scams marked, and the job boards' alerts counted by sender."""
+TODAY_GOOD = 8      # good matches listed in Today.md (the page has them all)
+TODAY_MAYBE = 4    # maybes named in one line
+
+
+def job_board(entries: dict[str, dict[str, Any]], now: dt.datetime) -> tuple[list[dict[str, Any]], dict[str, Any], str]:
+    """The job hunt across the personal mailboxes: (people writing about a job, every listing by fit, the owner's
+    Job search note: '' when he hasn't written it)."""
     recent = (now - dt.timedelta(days=JOB_DAYS)).isoformat()
-    people, alerts = [], {}
+    people, mail, note = [], [], ""
     for name, entry in entries.items():
+        if is_personal(entry) and not note:
+            note = jobs.read_note(entry)
         every, _junk = reported(name, entry)
         for m in every:
-            if m.get("label") != JOB or m["received"] < recent or m.get("answered"):
+            if m.get("label") != JOB or m["received"] < recent:
                 continue
             if kind(m) == "job":
-                people.append(m)
+                if not m.get("answered"):
+                    people.append(m)
             else:
-                who = _clean(m.get("from_name") or str(m.get("from_addr") or "").split("@")[-1], 30)
-                alerts[who] = alerts.get(who, 0) + 1
-    if not people and not alerts:
+                mail.append({**m, "mailbox": name})
+    return people, jobs.board(mail, note, sender=_sender), note
+
+
+def _job_name(j: dict[str, Any]) -> str:
+    return f"{j['title']}, {j['company']}" if j.get("company") else j["title"]
+
+
+def _job_md(j: dict[str, Any], now: dt.datetime, tz: Any) -> str:
+    """'[Junior Developer, Acme](link): Remote, $85k. Junior full stack, remote (Indeed, Wed)'."""
+    bits = ", ".join(b for b in (j.get("place"), j.get("pay")) if b)
+    return ((f"[{_job_name(j)}]({j['url']})" if j.get("url") else _job_name(j)) + (f": {bits}" if bits else "")
+            + (f". {j['why']}" if j.get("why") else "")
+            + f" ({_clean(j['from'], 24)}, {_short_day(j['received'], now, tz)}"
+            + (f", in {j['times']} alerts" if j.get("times", 1) > 1 else "") + ")")
+
+
+def job_lines(entries: dict[str, dict[str, Any]], now: dt.datetime, tz: Any) -> list[str]:
+    """Today.md's Job search block, first in the Email section: every person writing about a job (the ones waiting on
+    a reply first, likely scams marked), then the job boards' listings that fit what the owner's Job search note
+    says he wants, the maybes in a line, and how many didn't fit or look fake (left out here, never deleted)."""
+    people, b, note = job_board(entries, now)
+    if not people and not any(b.values()):
         return []
-    out = ["- **Job search**"]
+    page = jobs.PROFILE.removesuffix(".md")
+    out = [f"- **Job search** ([[{page}|what you want]])"]
+    key = jobs.note_key(note)
     newest = sorted(people, key=lambda m: m["received"], reverse=True)
     for m in sorted(newest, key=lambda m: (not m.get("pressing"), bool(m.get("scam")))):   # waiting first, scams last
-        flag = "⚠ looks like a scam: don't send money or ID" if m.get("scam") else \
+        fits = {j["fit"] for j in m.get("jobs") or []} if key and m.get("jobs_for") == key else set()
+        flag = "⚠ looks like a scam: don't send money or ID" if m.get("scam") or fits == {"scam"} else \
             "**waiting on your reply**" if m.get("pressing") else "Job"
+        why = next((j["why"] for j in m.get("jobs") or [] if j["fit"] == "no"), "") if fits == {"no"} else ""
         where = (f", possibly misfiled in {m['folder']}: check it" if m.get("misfiled")
                  else f", in {m['folder']}" if (m.get("folder") or "INBOX").upper() != "INBOX" else "")
         out.append(f"    - {flag}: {_clean(_sender(m), 40)}, {_short_subject(m.get('subject'))} "
-                   f"({_short_day(m['received'], now, tz)}{where})")
-    if alerts:
-        top = sorted(alerts.items(), key=lambda kv: -kv[1])
-        out.append(f"    - {sum(alerts.values())} job alert{'s' if sum(alerts.values()) != 1 else ''}: "
-                   + ", ".join(f"{who} {n}" for who, n in top[:6]) + (", …" if len(top) > 6 else "")
-                   + " (Add-ons > Email)")
+                   f"({_short_day(m['received'], now, tz)}{where})" + (f". Not a fit: {why}" if why else ""))
+    if not key:
+        n = len(b["unrated"])
+        out.append(f"    - {n} job board email{'s' * (n != 1)} not sorted for you: write what jobs you want in "
+                   f"[[{page}]] and Hisho picks out the good ones")
+        return out
+    if b["good"]:
+        out.append(f"    - ⭐ **{len(b['good'])} good match{'es' * (len(b['good']) != 1)}**")
+        out += [f"        - {_job_md(j, now, tz)}" for j in b["good"][:TODAY_GOOD]]
+        if len(b["good"]) > TODAY_GOOD:
+            out.append(f"        - …and {len(b['good']) - TODAY_GOOD} more (Add-ons > Email)")
+    elif any(b[f] for f in ("maybe", "no", "scam")):
+        out.append("    - No good match in the last two weeks.")
+    if b["maybe"]:
+        out.append(f"    - Maybe ({len(b['maybe'])}): " + "; ".join(_job_name(j) for j in b["maybe"][:TODAY_MAYBE])
+                   + ("; …" if len(b["maybe"]) > TODAY_MAYBE else ""))
+    if b["applied"]:
+        out.append(f"    - Applied ({len(b['applied'])}): " + "; ".join(_job_name(j) for j in b["applied"][:4])
+                   + ("; …" if len(b["applied"]) > 4 else ""))
+    left = [f"{len(b['no'])} not a fit"] if b["no"] else []
+    left += [f"{len(b['scam'])} look fake"] if b["scam"] else []
+    left += [f"{len(b['hidden'])} you said no to"] if b["hidden"] else []
+    if left:
+        out.append(f"    - Left out: {', '.join(left)} (still in your mailbox; all listed on Add-ons > Email)")
+    if b["unrated"]:
+        n = len(b["unrated"])
+        out.append(f"    - {n} job board email{'s' * (n != 1)} still being read")
     return out
 
 
@@ -2639,12 +2819,28 @@ def act(entries: dict[str, dict[str, Any]], ctx: Any, entry: str, item: str, act
         st["review"] = review
         save_state(entry, st)
         return {"ok": True, "message": "Done: off the list." if action == "done" else "Off the list: Hisho won't mention it again."}
+    if item.startswith("job-") and action in ("applied", "hide"):
+        return job_press(entries, ctx, item.removeprefix("job-"), action)
     if item != "new" or action != "compose" or entry not in entries:
         return {"ok": False, "error": "Email's only button is New email; everything else waits on the Approvals page"}
     res = new_email(entry, entries[entry], " ".join(str(ctx.input or "").split()), via="page")
     if res.get("ok"):
         res["message"] = "Drafted. It's on the Approvals page: look it over, Edit if needed, then Send."
     return res
+
+
+def job_press(entries: dict[str, dict[str, Any]], ctx: Any, key: str, action: str) -> dict[str, Any]:
+    """Applied / Not for me on a listing: one line added to the owner's Job search note (nothing in the mailbox)."""
+    personal = next((e for e in entries.values() if is_personal(e)), None)
+    _people, b, _note = job_board(entries, _now())
+    job = next((j for rows in b.values() for j in rows if isinstance(j, dict) and j.get("key") == key), None)
+    if personal is None or job is None:
+        return {"ok": False, "error": "That job isn't on the list any more"}
+    why = " ".join(str(getattr(ctx, "input", "") or "").split())[:120]
+    what = "Applied" if action == "applied" else "Not for me"
+    if not jobs.log_press(personal, what, job, _now(), why=why):
+        return {"ok": False, "error": f"Couldn't write to {jobs.PROFILE}"}
+    return {"ok": True, "message": f"{what}: noted in {jobs.PROFILE}. Delete that line there to undo it."}
 
 
 def _offer(name: str, entry: dict[str, Any], c: dict[str, Any]) -> str:

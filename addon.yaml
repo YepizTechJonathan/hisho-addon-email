@@ -17,7 +17,7 @@ name: email
 kind: integration
 title: Email
 description: Reads your company inboxes, drafts replies and clean-ups; sends or moves to Trash only when you approve.
-version: 0.18.3
+version: 0.19.0
 you_need:
   - "A mailbox that offers IMAP and SMTP (Gmail / Google Workspace, Zoho, iCloud, Yahoo, Fastmail, your host's mail...)"
   - "An app password for it (not your normal password); Set up this mailbox says where your provider makes one"
@@ -55,6 +55,7 @@ entry_schema:
   keep_words: "str?"              # comma-separated words: an email whose subject or sender names one is never cleaned up (e.g. Comic-Con, your kid's school)
   alerts: "bool?"                 # false = pressing emails show on the page and in Today.md but never push (default true)
   gov_contractor: "bool?"         # the address is public on SAM.gov: the sort knows fake registries, paid SAM.gov "renewals" and trademark notices are scams, and never calls a real agency or contracting lead junk
+  job_profile: "str?"             # a personal mailbox's job hunt: the vault note that says what jobs you want (default Companies/Personal/Job search.md); each job email's listings are rated against it, good matches first in Today.md
   personal: "bool?"               # a personal mailbox: sorted for a person (bills, appointments, deliveries, security notices, people you know), not a business (default: true when company is Personal)
   drafts: "bool?"                 # reply drafts on the Approvals page (default: on for a business mailbox, off for a personal one)
   request_form: "str?"            # a form to point customer requests at, named in their summary and drafts
