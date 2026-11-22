@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.26.0
+
+- Each job got ready to apply is checked on the web, one a poll: a Claude with only web search and page reading
+  (given only the job's title, employer, place, pay and link, nothing of the owner's) looks for the employer's site and
+  the opening there. The result leads the job's note ("Checked on the web": confirmed, likely real, can't tell, looks
+  fake, with the sources); Today.md marks a confirmed one; one that looks fake is marked fake. Needs Core's
+  `headless(web=True)`.
+
 ## 0.25.0
 
 - A notice that asks something of the owner is no longer trashed: its task goes on Today.md's task list (Hisho keeps

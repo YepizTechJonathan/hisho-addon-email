@@ -650,3 +650,29 @@ def test_a_notice_with_a_task_is_archived_and_the_task_goes_on_the_list(monkeypa
     got = dict((to, set(map(int, uids.split(",")))) for uids, to in moves())
     assert 5 in got["Archive"] and 5 not in got["Trash"]
     assert added and added[0].startswith("Confirm your Agent Co account (Agent Co, Globex email of 2026-10-23, now in Archive)")
+
+
+def test_a_prepared_job_is_checked_on_the_web_and_a_fake_one_marked(monkeypatch, tmp_path):
+    vault = tmp_path / "vault"
+    monkeypatch.setenv("HISHO_ROOT", str(vault))
+    (vault / "Companies/Personal/Job applications").mkdir(parents=True)
+    (vault / "Companies/Personal/Job applications/Courser - Help Desk.md").write_text("# Help Desk\n\n## Is it real? Can't tell\n- x\n")
+    jobs_ = [{"key": "a1", "title": "Help Desk", "company": "Courser", "fit": "good", "url": "https://zip.example/1"},
+             {"key": "b2", "title": "Admin", "company": "Fake Co", "fit": "good", "url": ""}]
+    kept = [{"uid": 1, "jobs": jobs_}]
+    state = tmp_path / "state/addons/email"
+    state.mkdir(parents=True)
+    (state / "job-prep.json").write_text(json.dumps({"a1": {"note": "Companies/Personal/Job applications/Courser - Help Desk"},
+                                                     "b2": {"note": "Companies/Personal/Job applications/Fake Co - Admin"}}))
+    prompts = []
+    answer = {"Courser": {"verdict": "confirmed", "company_site": "https://courser.com", "opening_url": "https://courser.com/jobs/7",
+                          "found": ["Listed on courser.com/careers"], "red_flags": []},
+              "Fake Co": {"verdict": "looks fake", "found": [], "red_flags": ["No such company"]}}
+    web = lambda p: prompts.append(p) or json.dumps(next(v for k, v in answer.items() if f"company: {k}" in p))
+    mod.research_jobs(kept, NOW, web)
+    mod.research_jobs(kept, NOW, web)
+    mod.research_jobs(kept, NOW, web)                       # one a poll, each once
+    assert len(prompts) == 2 and "Job search" not in prompts[0]   # nothing of the owner's goes to the web check
+    note = (vault / "Companies/Personal/Job applications/Courser - Help Desk.md").read_text()
+    assert note.index("## Checked on the web") < note.index("## Is it real?") and "https://courser.com/jobs/7" in note
+    assert jobs_[1]["fit"] == "scam"
