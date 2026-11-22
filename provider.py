@@ -1386,7 +1386,11 @@ def did_lines(entry: dict[str, Any], cleans: list[dict[str, Any]], now: dt.datet
         + ([f"{len(noted)} bills and account notices noted in Hisho and archived"] if noted else [])
     todos = [it for d in did if d["what"] in ("trash", "file", "archive", "note") for it in d["items"] if it.get("todo")]
     out = [] if not bits else [f"    - What I did (24 h): {', '.join(bits)}. Every one is in [[System/History/{history_path(now).stem}|History]]."]
+    said: set[str] = set()
     for it in todos:   # the email is gone, what it asked of him isn't
+        if _clean(it["todo"], 90).lower() in said:
+            continue   # the same task from two emails (an invite sent twice): said once, as it went on the list once
+        said.add(_clean(it["todo"], 90).lower())
         out.append(f"    - 📝 Added to your tasks: {_clean(it['todo'], 90)} ({_clean(it['from'] or it['from_addr'], 40)}, "
                    f"{it['date']}; the email is archived). Tick it off if you've done it already.")
     for what, it in events:   # said once, the day it was seen; the calendar reminds him a day and hours before

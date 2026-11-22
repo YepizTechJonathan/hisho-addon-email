@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.29.1
+
+- Today.md says a task added from email once, even when two emails asked for it (an invite sent twice put the
+  same "Added to your tasks" line in twice; the task list itself had it once).
+
 ## 0.29.0
 
 - New sort groups, the owner's rules (2026-11-22): **Social** (a social network's automatic notice) goes at once,

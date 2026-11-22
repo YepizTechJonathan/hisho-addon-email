@@ -621,6 +621,8 @@ def test_a_task_from_a_removed_notice_lands_in_the_brief(monkeypatch, tmp_path):
     clean = {"did": [{"at": NOW.isoformat(), "what": "trash", "folder": "", "items": [item]}]}
     lines = mod.did_lines(ASSIST, [clean], NOW)
     assert any("📝 Added to your tasks: Upload the AT&T receipt in Relay (Relay, 2026-10-23" in x for x in lines)
+    twice = {"did": [{"at": NOW.isoformat(), "what": "trash", "folder": "", "items": [item, {**item, "uid": 6}]}]}
+    assert sum("Added to your tasks" in x for x in mod.did_lines(ASSIST, [twice], NOW)) == 1   # an email sent twice: once
     assert mod._item(1, {"todo": "Buy now", "received": "2026-10-23"}, "Promotions").get("todo") is None   # never for a sale
 
 
