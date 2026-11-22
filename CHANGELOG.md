@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.22.0
+
+- The assistant puts the events an email names (an interview, an appointment) on Hisho's calendar itself, with
+  reminders a day and two hours before (an all-day event: 9 AM the day before and 7 AM on the day; needs Core's
+  calendar reminders). One the calendar already has (same day, mostly the same words) is only noted. Either way it is
+  said once in Today.md ("📅 Added to your calendar" / "Already on your calendar") and in the History note, and never
+  raised again; no "Add to your calendar" card for an assistant mailbox.
+
 ## 0.21.0
 
 - The assistant (`assistant: true`, the owner's choice): no clean-up cards for that mailbox. After every read it

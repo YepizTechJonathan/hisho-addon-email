@@ -550,3 +550,40 @@ def test_look_alike_notices_are_not_a_thread(monkeypatch, tmp_path):
              2: mail("Application is submitted", sender="SBA <no-reply@sba.gov>", date="Fri, 23 Oct 2026 09:00:00 -0700")}
     st = assist_poll(monkeypatch, tmp_path, inbox=inbox)
     assert moves() == [] and set(st["cleanup"]["present"]) == {1, 2}    # two applications, not one conversation
+
+
+class FakeCalendar:
+    def __init__(self, items=()):
+        self.items, self.made = list(items), []
+
+    def view(self, root, now, start=None, end=None):
+        return {"items": [i for i in self.items if start.isoformat() <= i["start"][:10] < end.isoformat()]}
+
+    def create_event(self, root, data):
+        self.made.append(data)
+        self.items.append({"title": data["title"], "start": data["start"]})
+        return {"id": "x.ics"}
+
+
+def _with_event(uid, title, start, mid):
+    return {"uid": uid, "message_id": mid, "from_addr": "desk@clinic.com", "from": "Clinic", "subject": "Your visit",
+            "received": NOW.isoformat(), "label": "Appointment", "event": {"title": title, "start": start}}
+
+
+def test_the_assistant_puts_events_on_the_calendar_once_with_reminders(monkeypatch, tmp_path):
+    monkeypatch.setenv("HISHO_ROOT", str(tmp_path / "vault"))
+    cal = FakeCalendar([{"title": "Comic-Con San Diego", "start": "2026-11-20"}])
+    kept = [_with_event(1, "Dentist cleaning", "2026-10-29T15:00", "<a@x>"),
+            _with_event(2, "San Diego Comic-Con", "2026-11-20", "<b@x>"),      # already there (other words order)
+            _with_event(3, "Old visit", "2026-10-20T09:00", "<c@x>")]           # past: nothing
+    clean = mod.assist_events(ASSIST, {}, kept, NOW, calendar=cal)
+    assert [d["title"] for d in cal.made] == ["Dentist cleaning"] and cal.made[0]["reminders"] == [1440, 120]
+    assert sorted(clean["events_done"]) == ["<a@x>", "<b@x>"], clean
+    again = mod.assist_events(ASSIST, clean, kept, NOW + dt.timedelta(minutes=5), calendar=cal)
+    assert len(cal.made) == 1 and again["did"] == clean["did"]               # never raised twice
+    st = {"cleanup": clean}
+    lines = mod.did_lines(ASSIST, [clean], NOW)
+    assert any("📅 Added to your calendar: Dentist cleaning (Thu Oct 29, 3:00 PM)" in x for x in lines)
+    assert any("📅 Already on your calendar: San Diego Comic-Con (Fri Nov 20)" in x for x in lines)
+    text = next((tmp_path / "vault" / "System" / "History").glob("*.md")).read_text()
+    assert "**Calendar** · added with reminders: Dentist cleaning" in text and "already there: San Diego Comic-Con" in text

@@ -871,7 +871,7 @@ def history_path(now: dt.datetime) -> Path:
     return root / "System" / "History" / f"Email {now.astimezone(_tz()).strftime('%Y-%m')}.md"
 
 
-WHAT = {"trash": "Trash", "file": "Filed", "archive": "Archived"}
+WHAT = {"trash": "Trash", "file": "Filed", "archive": "Archived", "calendar": "Calendar", "calendar-had": "Calendar"}
 
 
 def write_history(entry: dict[str, Any], did: list[dict[str, Any]], now: dt.datetime) -> None:
@@ -884,6 +884,12 @@ def write_history(entry: dict[str, Any], did: list[dict[str, Any]], now: dt.date
     for d in did:
         where = d["folder"] or (entry.get("trash_folder") or "Trash")
         for it in d["items"]:
+            if d["what"].startswith("calendar"):
+                lines.append(f"- {t.strftime('%a %b %d, %I:%M %p').replace(' 0', ' ')} · {entry.get('company') or ''} "
+                             f"({entry.get('address')}) · **Calendar** · "
+                             + ("already there: " if d["what"] == "calendar-had" else "added with reminders: ")
+                             + f"{_clean(it['about'], 90)} ({it['date'].replace('T', ' ')}), from {_clean(it['from'], 60)}")
+                continue
             lines.append(f"- {t.strftime('%a %b %d, %I:%M %p').replace(' 0', ' ')} · {entry.get('company') or ''} "
                          f"({entry.get('address')}, {entry.get('folder') or 'INBOX'}) · **{WHAT[d['what']]}** to {where} "
                          f"· {it['group']}: {_clean(it['from'] or it['from_addr'], 60)}, "
@@ -939,6 +945,79 @@ def assist(entry: dict[str, Any], ctx: Any, clean: dict[str, Any], kept: list[di
     return clean, gone
 
 
+TIMED_REMINDERS = (1440, 120)   # a day before and two hours before
+DAY_REMINDERS = (900, -420)     # an all-day event: 9 AM the day before and 7 AM on the day
+
+
+def _title_words(text: Any) -> set[str]:
+    return {w for w in re.findall(r"[a-z0-9]+", str(text or "").lower()) if len(w) > 2}
+
+
+def _event_when(start: str) -> str:
+    """'Tue Nov 25, 2:00 PM' (an event's time is already the owner's), or 'Tue Nov 25' for a whole day."""
+    try:
+        t = dt.datetime.fromisoformat(start)
+    except ValueError:
+        return start
+    if len(start) == 10:
+        return t.strftime("%a %b %-d")
+    return (t.astimezone(_tz()) if t.tzinfo else t).strftime("%a %b %-d, %-I:%M %p")
+
+
+def already_on_calendar(ev: dict[str, Any], items: list[dict[str, Any]]) -> bool:
+    """An event the calendar already has: the same day and a title sharing most of its words (any source)."""
+    day, want = ev["start"][:10], _title_words(ev["title"])
+    for i in items:
+        if str(i.get("start") or "")[:10] != day:
+            continue
+        have = _title_words(i.get("title"))
+        if want and have and len(want & have) >= max(1, min(len(want), len(have)) // 2):
+            return True
+    return False
+
+
+def assist_events(entry: dict[str, Any], clean: dict[str, Any], kept: list[dict[str, Any]], now: dt.datetime,
+                  calendar: Any = None) -> dict[str, Any]:
+    """The assistant puts the events emails name (an interview, an appointment) on the owner's calendar itself, with
+    reminders a day and two hours before, once: one it finds already there is only noted, and neither is raised again."""
+    clean = dict(clean)
+    done = set(clean.get("events_done") or [])
+    today = now.astimezone(_tz()).strftime("%Y-%m-%d")
+    todo = [m for m in kept if m.get("event") and not m.get("junk") and not m.get("scam") and not m.get("moved_from")
+            and (m.get("message_id") or str(m["uid"])) not in done and m["event"]["start"][:10] >= today]
+    if not todo:
+        return clean
+    if calendar is None:
+        from hisho import calendars as calendar
+    root = Path(os.environ.get("HISHO_ROOT") or "~/Hisho").expanduser()
+    company = "Personal" if is_personal(entry) else str(entry.get("company") or "Personal")
+    did = []
+    for m in todo:
+        ev, key = m["event"], m.get("message_id") or str(m["uid"])
+        day = dt.date.fromisoformat(ev["start"][:10])
+        try:
+            items = calendar.view(root, now, start=day, end=day + dt.timedelta(days=1))["items"]
+            item = {"from": _sender(m), "from_addr": m.get("from_addr") or "", "subject": m.get("subject") or "",
+                    "about": ev["title"], "date": ev["start"], "group": "Event", "uid": m["uid"]}
+            if already_on_calendar(ev, items):
+                did.append({"at": now.isoformat(timespec="seconds"), "what": "calendar-had", "folder": "", "items": [item]})
+            else:
+                all_day = len(ev["start"]) == 10
+                calendar.create_event(root, {"title": ev["title"], "start": ev["start"], "end": ev.get("end") or "",
+                                             "all_day": all_day, "company": company, "place": ev.get("place") or "",
+                                             "notes": _clean(f"From an email by {_sender(m)}: {m.get('subject') or ''}", 300),
+                                             "reminders": list(DAY_REMINDERS if all_day else TIMED_REMINDERS)})
+                did.append({"at": now.isoformat(timespec="seconds"), "what": "calendar", "folder": "", "items": [item]})
+            done.add(key)
+        except Exception as exc:  # noqa: BLE001 -- the calendar is down: tried again at the next poll
+            clean["assist_error"] = f"calendar: {str(exc)[:120]}"
+    cutoff = (now - dt.timedelta(days=DID_DAYS)).isoformat()
+    clean["did"] = [d for d in clean.get("did") or [] if d["at"] >= cutoff] + did
+    clean["events_done"] = sorted(done)[-2000:]
+    write_history(entry, did, now)
+    return clean
+
+
 def did_lines(entry: dict[str, Any], cleans: list[dict[str, Any]], now: dt.datetime) -> list[str]:
     """Today.md: what the assistant did in the last 24 h, and the deals and news it saw before removing them."""
     since = (now - dt.timedelta(hours=DAY_HOURS)).isoformat()
@@ -947,6 +1026,7 @@ def did_lines(entry: dict[str, Any], cleans: list[dict[str, Any]], now: dt.datet
         return []
     items = lambda what, groups=None: [it for d in did if d["what"] == what for it in d["items"]  # noqa: E731
                                        if groups is None or it["group"] in groups]
+    events = [(d["what"], it) for d in did if d["what"].startswith("calendar") for it in d["items"]]
     junk = len(items("trash", ("Junk",)))
     news = items("trash", ("Promotions", "Newsletters"))
     other = len(items("trash", ("Notifications", "Job alerts")))
@@ -958,7 +1038,11 @@ def did_lines(entry: dict[str, Any], cleans: list[dict[str, Any]], now: dt.datet
     bits = ([f"{len(news)} promotions and newsletters removed"] if news else []) \
         + ([f"{junk} junk and scams removed"] if junk else []) + ([f"{other} old notices and alerts removed"] if other else []) \
         + [f"{n} filed in {f}" for f, n in filed.items()] + ([f"{archived} older emails of a thread archived"] if archived else [])
-    out = [f"    - What I did (24 h): {', '.join(bits)}. Every one is in [[System/History/{history_path(now).stem}|History]]."]
+    out = [] if not bits else [f"    - What I did (24 h): {', '.join(bits)}. Every one is in [[System/History/{history_path(now).stem}|History]]."]
+    for what, it in events:   # said once, the day it was seen; the calendar reminds him a day and hours before
+        out.append(f"    - 📅 {'Added to your calendar' if what == 'calendar' else 'Already on your calendar'}: "
+                   f"{_clean(it['about'], 70)} ({_event_when(it['date'])}), from {_clean(it['from'], 40)}"
+                   + (". You'll get a reminder a day before and on the day." if what == "calendar" else "."))
     if news:
         senders: dict[str, list[str]] = {}
         for it in news:
@@ -1758,6 +1842,8 @@ def _poll_one(name: str, entry: dict[str, Any], ctx: Any, *, now: dt.datetime | 
             if assistant_on(entry):   # 0.21.0: it acts itself, no card
                 found = load_state(name.split("--")[0]).get("folders_found") or []
                 clean, gone = assist(entry, ctx, clean, kept, now, found, junk)
+                if not junk:
+                    clean = assist_events(entry, clean, kept, now)
                 clean["cards"] = {}   # its old clean-up cards leave the Approvals list (withdrawn)
                 kept = [m for m in kept if m["uid"] not in gone]
             elif _cleanup_due(clean, now):
@@ -2908,7 +2994,7 @@ def _stream_cards(name: str, entry: dict[str, Any], company: str, sname: str, fo
     out = []
     msgs = [m for m in st.get("messages") or []
             if not m.get("gone") or (live is not None and m.get("message_id") in live)]
-    events = {m["uid"]: card for m in msgs
+    events = {} if assistant_on(entry) else {m["uid"]: card for m in msgs   # the assistant adds them itself
               if (card := _event_card(name, entry, company, sname, folder, st, m, recent, tz))}
     for m in msgs:
         if m.get("answered") or m["received"] < recent or m.get("junk") or m.get("moved_from"):
