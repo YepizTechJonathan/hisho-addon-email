@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.23.0
+
+- The assistant gets good job matches ready: Claude (no tools, judging from the email only) says whether each looks
+  real and what to check, why it fits, what to put first and a cover letter draft, in a vault note
+  `Companies/Personal/Job applications/<Company> - <Title>.md`; Today.md's good match links it ("ready to apply"). One
+  that looks fake is marked fake instead. A job email with only fake offers in it is removed right away.
+
 ## 0.22.0
 
 - The assistant puts the events an email names (an interview, an appointment) on Hisho's calendar itself, with

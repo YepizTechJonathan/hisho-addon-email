@@ -587,3 +587,27 @@ def test_the_assistant_puts_events_on_the_calendar_once_with_reminders(monkeypat
     assert any("📅 Already on your calendar: San Diego Comic-Con (Fri Nov 20)" in x for x in lines)
     text = next((tmp_path / "vault" / "System" / "History").glob("*.md")).read_text()
     assert "**Calendar** · added with reminders: Dentist cleaning" in text and "already there: San Diego Comic-Con" in text
+
+
+def test_a_good_job_is_got_ready_and_a_fake_one_marked(monkeypatch, tmp_path):
+    vault = tmp_path / "vault"
+    monkeypatch.setenv("HISHO_ROOT", str(vault))
+    (vault / "Companies/Personal").mkdir(parents=True)
+    (vault / "Companies/Personal/Job search.md").write_text("# Job search\n\n## Roles I want\n- Help desk\n")
+    kept = [{"uid": 1, "from_addr": "alerts@zip.com", "from": "ZipRecruiter", "subject": "Jobs for you", "received": NOW.isoformat(),
+             "listing": "Help Desk at Courser, Riverside", "jobs": [
+                 {"key": "a1", "title": "Help Desk", "company": "Courser", "place": "Riverside", "pay": "$65K", "fit": "good",
+                  "why": "entry help desk", "url": "https://zip.example/job/1"},
+                 {"key": "b2", "title": "Remote Assistant", "company": "Gmail Co", "place": "Remote", "pay": "$90/hr",
+                  "fit": "good", "why": "?", "url": ""}]}]
+    answers = {"Help Desk": {"verdict": "looks real", "checks": ["Known board"], "verify": ["Find it on courser.com"],
+                             "why_fit": "Entry help desk near you.", "highlight": ["Proxmox"], "cover_letter": "Dear [Hiring Manager], ..."},
+               "Remote Assistant": {"verdict": "looks fake", "checks": ["Pay far too high"]}}
+    ask = lambda p: json.dumps(next(v for k, v in answers.items() if f"title: {k}" in p))
+    mod.assist_jobs(ASSIST, kept, NOW, ask)
+    note = (vault / "Companies/Personal/Job applications/Courser - Help Desk.md").read_text()
+    assert "**Apply here:** https://zip.example/job/1" in note and "## Is it real? Looks real" in note and "- [ ] Find it on courser.com" in note
+    assert kept[0]["jobs"][1]["fit"] == "scam" and not (vault / "Companies/Personal/Job applications/Gmail Co - Remote Assistant.md").exists()
+    calls = []
+    mod.assist_jobs(ASSIST, kept, NOW, lambda p: calls.append(p) or "{}")
+    assert calls == []                                       # each job once

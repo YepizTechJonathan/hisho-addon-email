@@ -35,6 +35,8 @@ Reads your company inboxes, tells you what needs you, and drafts replies; **noth
   `System/History/Email YYYY-MM.md`.
   Events an email names go on Hisho's calendar with reminders a day and two hours before (said once in Today.md;
   one already on the calendar is only noted), instead of an "Add to your calendar" card.
+  Each good job match is got ready in `Companies/Personal/Job applications/` (looks real?, what to check, why it
+  fits, what to put first, a cover letter draft); a job email with only fake offers goes at once.
 - **Clean-up**: new mail is sorted on every 5-minute read, and at 8 AM and 6 PM (when there's anything) one "Clean up" card per mailbox on the Approvals
   page: the newsletters, promotions, junk and old notices you don't need, grouped by sender with a few words on what
   each was about (the first one covers the whole inbox). It never offers a reply you owe, a customer, a bill or
