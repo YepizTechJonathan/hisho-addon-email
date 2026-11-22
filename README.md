@@ -25,6 +25,14 @@ Reads your company inboxes, tells you what needs you, and drafts replies; **noth
 - Sending (`send.py`, the only file with SMTP): one plain-text message from the mailbox the email came to, to the
   card's To and Cc only (no Bcc, no attachments), threaded, at most `max_sends_per_hour` per mailbox (default 10).
   Zoho files SMTP mail in Sent itself; Hisho checks and puts a copy there only if it didn't. Every send is journaled.
+- **Assistant** (`assistant: true`, 0.21.0): instead of clean-up cards, Hisho acts on its own after each read and
+  then tells you. Junk, scams and fake job offers go to Trash right away, promotions and newsletters after 3 hours
+  (each one named in Today.md's "Deals and news I saw" first), notices after a day, job alerts with nothing for you
+  after a week. Receipts and payment confirmations are filed in your Purchases / Payments folders, and the older emails
+  of a thread are archived so only the latest stays in the inbox. Nothing the clean-up would never offer is touched
+  (people you wrote to, bills still to pay, deadlines, jobs that fit, keep_words, starred or labelled Gmail mail), and
+  nothing is deleted for good. Every move is listed in Today.md and, one line per email, in
+  `System/History/Email YYYY-MM.md`.
 - **Clean-up**: new mail is sorted on every 5-minute read, and at 8 AM and 6 PM (when there's anything) one "Clean up" card per mailbox on the Approvals
   page: the newsletters, promotions, junk and old notices you don't need, grouped by sender with a few words on what
   each was about (the first one covers the whole inbox). It never offers a reply you owe, a customer, a bill or
@@ -97,6 +105,10 @@ mailbox shows "waiting for app password": no error and no alert.
   - `max_sends_per_hour` (int, optional)
   - `own_addresses` (str, optional)
   - `trash_folder` (str, optional)
+  - `assistant` (bool, optional)
+  - `purchases_folder` (str, optional)
+  - `payments_folder` (str, optional)
+  - `archive_folder` (str, optional)
   - `note` (str, optional)
 
 ## How to install

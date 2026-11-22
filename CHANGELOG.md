@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.21.0
+
+- The assistant (`assistant: true`, the owner's choice): no clean-up cards for that mailbox. After every read it
+  removes junk, scams and fake job offers at once, promotions and newsletters after 3 hours (named in Today.md's
+  "Deals and news I saw"), notices after a day and job alerts with nothing for him after a week; files receipts and
+  payment confirmations (new sort groups) in his Purchases / Payments folders (made when missing); and archives a
+  thread's older emails so the latest stays in front. never_clean guards every removal, as on a card. Every move is
+  in Today.md ("What I did") and one line per email in the vault's `System/History/Email YYYY-MM.md`.
+- The sorter knows Receipts and Payments; Keep mail is sorted once more for them (sort version 3).
+
 ## 0.20.0
 
 - Clean-up keeps up with the inbox: new mail is sorted for clean-up on every 5-minute read (it was sorted once a day

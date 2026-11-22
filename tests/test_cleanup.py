@@ -211,7 +211,19 @@ class TrashBox:
 
     def _cmd(self, name, *args):
         TrashBox.log.append((name, *args))
-        mod.cleaner.check_cleanup_command(name, args, inbox=self.inbox, trash=self.trash, uids=set(self.uids))
+        mod.cleaner.check_cleanup_command(name, args, inbox=self.inbox, trash=self.trash, uids=set(self.uids),
+                                          dests=getattr(self, "dests", frozenset()))
+
+    folders = ["INBOX", "Trash", "Archive"]
+
+    def list(self):
+        self._cmd("LIST")
+        return "OK", [f'(\\HasNoChildren) "/" "{f}"'.encode() for f in TrashBox.folders]
+
+    def create(self, name):
+        self._cmd("CREATE", name)
+        TrashBox.folders.append(str(name).strip('"'))
+        return "OK", [b""]
 
     def login(self, u, p):
         self._cmd("LOGIN", u, p)
@@ -453,3 +465,88 @@ def test_keep_words_are_never_cleaned_up(monkeypatch):
     assert 30 not in [it["uid"] for it in card["action"]["payload"]["items"]]
     assert mod.never_clean({"subject": "WonderCon tickets", "group": "Promotions"}, None,
                            {"keep_words": ["WonderCon"]}) == "you keep anything about WonderCon"
+
+
+# ── 0.21.0: the assistant acts on its own, then says what it did ──────────
+
+ASSIST = {**PP, "assistant": True}
+RECEIPTS = {**INBOX,
+            9: mail("Your order has shipped", sender="Shop <orders@shop.com>"),
+            10: mail("Payment received, thank you", sender="SCE <billing@sce.com>"),
+            11: mail("RE: RAM Kit Issue", sender="Corsair Support <help@corsair.com>", date="Wed, 21 Oct 2026 09:00:00 -0700"),
+            12: mail("RE: RAM Kit Issue", sender="Corsair Support <help@corsair.com>", date="Fri, 23 Oct 2026 10:00:00 -0700")}
+SORTS = {**GROUPS, "Your order has shipped": ("Receipts", "order shipped"),
+         "Payment received, thank you": ("Payments", "bill paid"), "RE: RAM Kit Issue": ("Keep", "RAM RMA")}
+
+
+def assist_poll(monkeypatch, tmp_path, inbox=RECEIPTS, now=NOW):
+    monkeypatch.setenv("HISHO_ROOT", str(tmp_path / "vault"))
+    TrashBox.log, TrashBox.caps, TrashBox.folders = [], ("IMAP4REV1", "MOVE", "UIDPLUS"), ["INBOX", "Trash"]
+    real = getattr(mod.cleaner, "trash_unpatched", mod.cleaner.trash)   # a second poll in one test: the real one
+    monkeypatch.setattr(mod.cleaner, "trash_unpatched", real, raising=False)
+    monkeypatch.setattr(mod.cleaner, "trash", lambda e, pw, p, dest="": real(e, pw, p, imap_factory=TrashBox, dest=dest))
+    TrashBox.__init__orig = getattr(TrashBox, "__init__orig", TrashBox.__init__)
+    ids = {u: f"<{abs(hash(mod.email.message_from_bytes(r)['Subject'] + str(mod.email.message_from_bytes(r)['From'])))}@x>"
+           for u, r in inbox.items()}
+
+    def init(self, host, port, **kw):
+        TrashBox.__init__orig(self, host, port, **kw)
+        self.ids = ids
+    monkeypatch.setattr(TrashBox, "__init__", init)
+    return mod.poll("pp", ASSIST, Ctx(), now=now, ask=sorter(SORTS), connect_fn=lambda e, p: Box(inbox, SENT))
+
+
+def moves():
+    return [(c[2], c[3]) for c in TrashBox.log if c[0] == "UID" and c[1] == "MOVE"]
+
+
+def test_the_assistant_removes_files_and_archives_without_a_card(monkeypatch, tmp_path):
+    st = assist_poll(monkeypatch, tmp_path)
+    got = dict((to, set(map(int, uids.split(",")))) for uids, to in moves())
+    assert got["Trash"] == {1, 2, 3, 4, 5}            # newsletters, promotion, junk, a 3-day-old notice
+    assert got["Purchases"] == {9} and got["Payments"] == {10}   # filed; both folders made, they weren't there
+    assert got["Archive"] == {11}                      # the older Corsair email; the newest (12) stays in front
+    assert ("CREATE", "Purchases") in TrashBox.log and ("CREATE", "Payments") in TrashBox.log
+    left = set(st["cleanup"]["present"])
+    assert {6, 7, 8, 12} <= left and not left & {1, 2, 3, 4, 5, 9, 10, 11}   # a person, a bill, fresh news, the latest
+    assert not [c for c in mod.proposals({"pp": ASSIST}, Ctx()) if c["action"]["type"] == "email.trash"]
+
+
+def test_every_move_is_in_the_history_note_and_the_brief(monkeypatch, tmp_path):
+    assist_poll(monkeypatch, tmp_path)
+    (note,) = (tmp_path / "vault" / "System" / "History").glob("Email *.md")
+    text = note.read_text()
+    assert note.name == "Email 2026-10.md" and text.startswith("# Email history, October 2026")
+    assert text.count("\n- ") == 8 and "**Filed** to Purchases" in text and "**Archived** to Archive" in text
+    lines = mod.morning({"pp": ASSIST}, Ctx())["lines"]
+    did = next(x for x in lines if "What I did" in x)
+    assert "3 promotions and newsletters removed" in did and "1 junk and scams removed" in did
+    assert "1 filed in Purchases" in did and "1 older emails of a thread archived" in did and "[[System/History/Email 2026-10|History]]" in did
+    assert any(x.strip().startswith("- Deals and news I saw:") and "sale" in x for x in lines)
+
+
+def test_nothing_is_tried_twice_and_fresh_mail_waits(monkeypatch, tmp_path):
+    assist_poll(monkeypatch, tmp_path)
+    first = len(moves())
+    assist_poll(monkeypatch, tmp_path, now=NOW + dt.timedelta(minutes=5))
+    assert moves() == []                                   # the same mail isn't moved again
+    assert first == 4
+    assist_poll(monkeypatch, tmp_path, now=NOW + dt.timedelta(hours=3))
+    assert [(u, to) for u, to in moves()] == [("8", "Trash")]   # the fresh newsletter, once 3 hours old
+
+
+def test_the_guard_lets_the_assistant_move_only_to_its_one_folder():
+    ok = dict(inbox="INBOX", trash="Trash", uids={1}, dests=frozenset({"Purchases"}))
+    mod.cleaner.check_cleanup_command("UID", ("MOVE", "1", "Purchases"), **ok)
+    mod.cleaner.check_cleanup_command("CREATE", ("Purchases",), **ok)
+    for name, args in (("UID", ("MOVE", "1", "Archive")), ("CREATE", ("Trash",)), ("DELETE", ("Purchases",)),
+                       ("UID", ("MOVE", "2", "Purchases"))):
+        with pytest.raises(mod.cleaner.CleanupViolation):
+            mod.cleaner.check_cleanup_command(name, args, **ok)
+
+
+def test_look_alike_notices_are_not_a_thread(monkeypatch, tmp_path):
+    inbox = {1: mail("Application is submitted", sender="SBA <no-reply@sba.gov>", date="Wed, 21 Oct 2026 09:00:00 -0700"),
+             2: mail("Application is submitted", sender="SBA <no-reply@sba.gov>", date="Fri, 23 Oct 2026 09:00:00 -0700")}
+    st = assist_poll(monkeypatch, tmp_path, inbox=inbox)
+    assert moves() == [] and set(st["cleanup"]["present"]) == {1, 2}    # two applications, not one conversation

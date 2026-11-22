@@ -17,7 +17,7 @@ name: email
 kind: integration
 title: Email
 description: Reads your company inboxes, drafts replies and clean-ups; sends or moves to Trash only when you approve.
-version: 0.20.0
+version: 0.21.0
 you_need:
   - "A mailbox that offers IMAP and SMTP (Gmail / Google Workspace, Zoho, iCloud, Yahoo, Fastmail, your host's mail...)"
   - "An app password for it (not your normal password); Set up this mailbox says where your provider makes one"
@@ -70,6 +70,10 @@ entry_schema:
   max_sends_per_hour: "int?"      # rate guard per mailbox (default 10)
   own_addresses: "str?"           # your other addresses (comma-separated): never drafted a reply (this mailbox's own is included)
   trash_folder: "str?"            # where an approved clean-up moves mail (default Trash; Zoho empties it after ~30 days)
+  assistant: "bool?"              # true = no clean-up cards: after each read Hisho removes junk, scams, fake job offers, promotions (noted in Today.md first) and old notices, files receipts and payments, and archives a thread's older emails; every move is in Today.md and System/History/Email YYYY-MM.md (default false)
+  purchases_folder: "str?"        # where the assistant files receipts (default: your Purchases / Purchased / Receipts folder, else a new Purchases)
+  payments_folder: "str?"         # where it files payment confirmations (default: your Payments folder, else a new Payments)
+  archive_folder: "str?"          # where a thread's older emails go (default Archive; Gmail: [Gmail]/All Mail, i.e. out of the inbox, labels kept)
   note: "str?"
 connect:
   label: Set up this mailbox

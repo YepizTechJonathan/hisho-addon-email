@@ -1,9 +1,11 @@
-"""Inbox clean-up, for the Email add-on: the ONLY code that changes a mailbox. It runs only from Hisho's Approvals
-list, when the owner pressed Approve on a "Clean up" card that listed these exact messages (Core checks the
-payload's hash first, and the provider drops anything that may never be cleaned before calling ``trash``).
+"""Inbox clean-up, for the Email add-on: the ONLY code that changes a mailbox. It runs from Hisho's Approvals list,
+when the owner pressed Approve on a "Clean up" card that listed these exact messages (Core checks the payload's hash
+first), or, for a mailbox with ``assistant: true`` (0.21.0, the owner's choice), from the assistant's own pass after a
+poll; either way the provider drops anything that may never be cleaned before calling ``trash``, and every move is
+written to the History note.
 
 What it can do: move the listed messages from the inbox to the Trash folder (where Zoho keeps them about 30 days),
-nothing else. Before moving, each one is checked: same UIDVALIDITY, and the UID still carries the Message-ID the
+or (0.21.0, the assistant) to one named Archive or filing folder, creating that folder when it is missing; nothing else. Before moving, each one is checked: same UIDVALIDITY, and the UID still carries the Message-ID the
 card showed; a message that doesn't match is left alone. It uses UID MOVE, or where the server lacks MOVE, UID COPY
 to Trash + UID STORE \\Deleted + UID EXPUNGE of only those UIDs. ``TrashIMAP`` refuses everything else, before it is
 sent: any other folder, any UID not on the card, a plain EXPUNGE or CLOSE (they would remove other deleted mail too),
@@ -41,10 +43,16 @@ def mailbox(name: str) -> str:
     return '"' + name.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def check_cleanup_command(name: str, args: tuple[Any, ...], *, inbox: str, trash: str, uids: set[int]) -> None:
-    """The IMAP clean-up may use, and only on the approved UIDs."""
+def check_cleanup_command(name: str, args: tuple[Any, ...], *, inbox: str, trash: str, uids: set[int],
+                          dests: frozenset[str] = frozenset()) -> None:
+    """The IMAP clean-up may use, and only on the chosen UIDs. ``dests``: folders besides Trash it may move them to
+    (the assistant's Archive and filing folders, 0.21.0), and may CREATE when missing (never Trash)."""
     name = str(name).upper()
     if name in ("LOGIN", "CAPABILITY", "NOOP", "LOGOUT"):
+        return
+    if name == "CREATE" and args and str(args[0]).strip('"') in dests:
+        return
+    if name == "LIST":
         return
     if name in ("SELECT", "EXAMINE"):
         if args and str(args[0]).strip('"') == inbox:
@@ -62,7 +70,7 @@ def check_cleanup_command(name: str, args: tuple[Any, ...], *, inbox: str, trash
             return
         if sub == "FETCH" and items.upper() == "(UID X-GM-LABELS)":   # Gmail's labels: a read
             return
-        if sub in ("MOVE", "COPY") and items.strip('"') == trash:
+        if sub in ("MOVE", "COPY") and (items.strip('"') == trash or items.strip('"') in dests):
             return
         if sub == "STORE" and items.replace(" ", "").upper() == "+FLAGS(\\DELETED)":
             return
@@ -73,10 +81,10 @@ def check_cleanup_command(name: str, args: tuple[Any, ...], *, inbox: str, trash
 
 
 class TrashIMAP(imaplib.IMAP4_SSL):
-    inbox, trash, uids = "INBOX", "Trash", frozenset()
+    inbox, trash, uids, dests = "INBOX", "Trash", frozenset(), frozenset()
 
     def _command(self, name: str, *args: Any) -> Any:
-        check_cleanup_command(name, args, inbox=self.inbox, trash=self.trash, uids=set(self.uids))
+        check_cleanup_command(name, args, inbox=self.inbox, trash=self.trash, uids=set(self.uids), dests=self.dests)
         return super()._command(name, *args)
 
 
@@ -116,13 +124,17 @@ def validate(payload: Any) -> dict[str, Any]:
 
 
 def trash(entry: dict[str, Any], password: str, p: dict[str, Any], *,
-          imap_factory: Callable[..., Any] = TrashIMAP) -> dict[str, Any]:
-    """Move exactly ``p['items']`` (still matching their Message-IDs) from the inbox to Trash."""
-    inbox, folder = str(entry.get("folder") or "INBOX"), str(entry.get("trash_folder") or "Trash")
+          imap_factory: Callable[..., Any] = TrashIMAP, dest: str = "") -> dict[str, Any]:
+    """Move exactly ``p['items']`` (still matching their Message-IDs) from the inbox to Trash, or with ``dest`` to that
+    folder instead (the assistant's Archive or a filing folder, created when missing; nothing is deleted)."""
+    inbox, trash_folder = str(entry.get("folder") or "INBOX"), str(entry.get("trash_folder") or "Trash")
+    folder = dest or trash_folder
+    to_trash = folder == trash_folder
     want = {it["uid"]: it for it in p["items"]}
     conn = imap_factory(str(entry.get("imap_host") or "imap.zoho.com"), int(entry.get("imap_port") or 993),
                         ssl_context=ssl.create_default_context(), timeout=60)
-    conn.inbox, conn.trash, conn.uids = inbox, folder, frozenset(want)
+    conn.inbox, conn.trash, conn.uids = inbox, trash_folder, frozenset(want)
+    conn.dests = frozenset() if to_trash else frozenset({folder})
     try:
         conn.login(str(entry["address"]), password)
         typ, _ = conn.select(mailbox(inbox))                   # read-write: a move needs it (nothing is marked read)
@@ -143,7 +155,13 @@ def trash(entry: dict[str, Any], password: str, p: dict[str, Any], *,
         ok = sorted(u for u, it in want.items() if u in found and (not it["message_id"] or found[u] == it["message_id"]))
         caps = {c.upper() for c in (getattr(conn, "capabilities", ()) or ())}
         labelled = []
-        if "X-GM-EXT-1" in caps and ok:   # Gmail: Trash takes a message out of every label; one you filed or starred stays
+        if not to_trash and ok:   # a filing folder or Archive: made when it isn't there yet
+            typ, data = conn.list()
+            names = {str(m.group(1)).strip('"') for line in (data or []) if isinstance(line, bytes)
+                     for m in [re.search(r' (?:"[^"]*"|NIL) (.+)$', line.decode("utf-8", "replace"))] if m}
+            if folder not in names:
+                conn.create(mailbox(folder))
+        if to_trash and "X-GM-EXT-1" in caps and ok:   # Gmail: Trash takes a message out of every label; one you filed or starred stays
             typ, data = conn.uid("FETCH", ",".join(str(u) for u in ok), "(UID X-GM-LABELS)")
             keep = set()
             for part in (data or []) if typ == "OK" else []:
@@ -179,7 +197,8 @@ def trash(entry: dict[str, Any], password: str, p: dict[str, Any], *,
             return {"ok": False, "error": f"Zoho refused the move: {data!r}"[:240]}
         keeps = "Gmail" if "X-GM-EXT-1" in caps else "Zoho" if "zoho" in str(entry.get("imap_host") or "zoho") else "Your mail"
         return {"ok": True, "moved": ok, "skipped": skipped, "labelled": labelled, "how": how,
-                "message": f"Moved {len(ok)} email{'s' * (len(ok) != 1)} to {folder} ({keeps} keeps Trash about 30 days)"
+                "message": f"Moved {len(ok)} email{'s' * (len(ok) != 1)} to {folder}"
+                           + (f" ({keeps} keeps Trash about 30 days)" if to_trash else "")
                            + (f"; {skipped} had already gone or changed and were left alone" if skipped else "")
                            + (f"; {len(labelled)} starred or under one of your labels were left alone" if labelled else "") + "."}
     except (imaplib.IMAP4.error, OSError, ssl.SSLError) as exc:
