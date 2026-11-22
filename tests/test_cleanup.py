@@ -503,12 +503,12 @@ def moves():
 def test_the_assistant_removes_files_and_archives_without_a_card(monkeypatch, tmp_path):
     st = assist_poll(monkeypatch, tmp_path)
     got = dict((to, set(map(int, uids.split(",")))) for uids, to in moves())
-    assert got["Trash"] == {1, 2, 3, 4, 5}            # newsletters, promotion, junk, a 3-day-old notice
+    assert got["Trash"] == {1, 2, 3, 4, 5, 8}         # newsletters (the fresh one too), promotion, junk, a notice
     assert got["Purchases"] == {9} and got["Payments"] == {10}   # filed; both folders made, they weren't there
     assert got["Archive"] == {11}                      # the older Corsair email; the newest (12) stays in front
     assert ("CREATE", "Purchases") in TrashBox.log and ("CREATE", "Payments") in TrashBox.log
     left = set(st["cleanup"]["present"])
-    assert {6, 7, 8, 12} <= left and not left & {1, 2, 3, 4, 5, 9, 10, 11}   # a person, a bill, fresh news, the latest
+    assert {6, 7, 12} <= left and not left & {1, 2, 3, 4, 5, 8, 9, 10, 11}   # a person, a bill, the latest
     assert not [c for c in mod.proposals({"pp": ASSIST}, Ctx()) if c["action"]["type"] == "email.trash"]
 
 
@@ -517,10 +517,10 @@ def test_every_move_is_in_the_history_note_and_the_brief(monkeypatch, tmp_path):
     (note,) = (tmp_path / "vault" / "System" / "History").glob("Email *.md")
     text = note.read_text()
     assert note.name == "Email 2026-10.md" and text.startswith("# Email history, October 2026")
-    assert text.count("\n- ") == 8 and "**Filed** to Purchases" in text and "**Archived** to Archive" in text
+    assert text.count("\n- ") == 9 and "**Filed** to Purchases" in text and "**Archived** to Archive" in text
     lines = mod.morning({"pp": ASSIST}, Ctx())["lines"]
     did = next(x for x in lines if "What I did" in x)
-    assert "3 promotions and newsletters removed" in did and "1 junk and scams removed" in did
+    assert "4 promotions and newsletters removed" in did and "1 junk and scams removed" in did
     assert "1 filed in Purchases" in did and "1 older emails of a thread archived" in did and "[[System/History/Email 2026-10|History]]" in did
     assert any(x.strip().startswith("- Deals and news I saw:") and "sale" in x for x in lines)
 
@@ -532,7 +532,7 @@ def test_nothing_is_tried_twice_and_fresh_mail_waits(monkeypatch, tmp_path):
     assert moves() == []                                   # the same mail isn't moved again
     assert first == 4
     assist_poll(monkeypatch, tmp_path, now=NOW + dt.timedelta(hours=3))
-    assert [(u, to) for u, to in moves()] == [("8", "Trash")]   # the fresh newsletter, once 3 hours old
+    assert moves() == []
 
 
 def test_the_guard_lets_the_assistant_move_only_to_its_one_folder():
@@ -682,3 +682,35 @@ def test_a_prepared_job_is_checked_on_the_web_and_a_fake_one_marked(monkeypatch,
     assert note.index("## Checked on the web") < note.index("## Is it real?") and "https://courser.com/jobs/7" in note
     assert "Opened safely (enclosed browser on worker-1)" in note
     assert jobs_[1]["fit"] == "scam"
+
+
+
+def test_he_would_have_deleted_these_too(monkeypatch, tmp_path):
+    # 2026-11-22: a store he once wrote to still sent promotions; rated job alerts with nothing for him waited a week
+    clean = {"contacts": ["deals@shop.com"], "present": [1, 2, 3, 4, 5], "keep_words": [], "cats": {
+        "1": {"group": "Promotions", "from_addr": "deals@shop.com", "bulk": True, "received": NOW.isoformat(), "subject": "Sale"},
+        "2": {"group": "Notifications", "from_addr": "alerts@bank.com", "received": (NOW - dt.timedelta(hours=2)).isoformat(),
+              "subject": "Statement ready", "auto": True},
+        "3": {"group": "Jobs", "from_addr": "alert@indeed.com", "received": NOW.isoformat(), "subject": "Payroll job"},
+        "4": {"group": "Jobs", "from_addr": "jobalerts-noreply@linkedin.com", "received": NOW.isoformat(), "subject": "Help desk"},
+        "5": {"group": "Keep", "from_addr": "ann@client.com", "received": NOW.isoformat(), "subject": "Lunch?"}}}
+    monkeypatch.setattr(mod, "_prep_state", lambda: {"g1": {"verdict": "likely real", "note": "x"}})
+    kept = [{"uid": 2, "label": "Bill or invoice"},
+            {"uid": 3, "jobs_for": "k", "jobs": [{"key": "n1", "fit": "no"}]},
+            {"uid": 4, "jobs_for": "k", "jobs": [{"key": "g1", "fit": "good"}, {"key": "m1", "fit": "maybe"}]}]
+    plan = {(what, folder): [it["uid"] for it in items] for what, folder, items in mod.assist_plan(ASSIST, clean, kept, NOW)}
+    assert plan[("trash", "")] == [1, 3]                       # the store's mass mail, the alert with nothing for him
+    assert plan[("file", "Payments")] == [2]                   # a statement: a record
+    assert plan[("archive", "Archive")] == [4]                 # its jobs are in Hisho now (note + Today.md)
+    assert 5 not in [u for v in plan.values() for u in v]      # a person writing stays
+
+
+def test_an_archived_job_alert_keeps_its_jobs_in_hisho(monkeypatch, tmp_path):
+    monkeypatch.setenv("HISHO_ROOT", str(tmp_path / "vault"))
+    monkeypatch.setattr(mod, "_prep_state", lambda: {"g1": {"verdict": "likely real", "note": "x"}})
+    monkeypatch.setattr(mod.cleaner, "trash", lambda e, pw, p, dest="": {"ok": True, "moved": [it["uid"] for it in p["items"]]})
+    clean = {"present": [4], "keep_words": [], "cats": {"4": {"group": "Jobs", "from_addr": "jobalerts-noreply@linkedin.com",
+                                                              "received": NOW.isoformat(), "subject": "Help desk"}}}
+    kept = [{"uid": 4, "jobs_for": "k", "jobs": [{"key": "g1", "fit": "good"}]}]
+    clean, gone = mod.assist(ASSIST, Ctx(), clean, kept, NOW)
+    assert gone == set() and kept[0]["held_in_hisho"] is True

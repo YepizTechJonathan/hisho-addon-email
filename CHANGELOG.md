@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.28.0
+
+- The assistant keeps up the way the owner would (his check, 2026-11-22): promotions and newsletters go as they come
+  (still named in Today.md), notices after an hour; a store's or support desk's mass mailing goes even if he once
+  wrote to that address (a person writing still never does); a job board's alert goes once rated with nothing for him,
+  and one with jobs that fit goes to Archive once each good job has its note (its jobs stay in Today.md and on the
+  page for their two weeks); a statement ready, money received or a payment scheduled is filed with the payments.
+
 ## 0.27.1
 
 - The job checks read Claude's answer when it comes over several lines or in a ```json fence (the web check always

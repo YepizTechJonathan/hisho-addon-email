@@ -606,8 +606,9 @@ def never_clean(c: dict[str, Any], m: dict[str, Any] | None, clean: dict[str, An
             return "pressing"
     if c.get("labels"):
         return "also in " + ", ".join(c["labels"][:3])   # Gmail: Trash would take it out of these too
-    if c.get("from_addr") and c["from_addr"] in set(clean.get("contacts") or []):
-        return "someone you wrote to"
+    if c.get("from_addr") and c["from_addr"] in set(clean.get("contacts") or []) \
+            and not ((c.get("bulk") or c.get("auto")) and c.get("group") in CLEAN_GROUPS):
+        return "someone you wrote to"   # 0.28.0: a store's or support desk's mass mailing isn't a person writing
     if alert:
         return ""
     if c.get("from_addr") and c["from_addr"] in set(clean.get("keep_senders") or []):
@@ -783,6 +784,8 @@ def run_trash(entries: dict[str, dict[str, Any]], ctx: Any, payload: dict[str, A
 # move goes in Today.md and the History note (``System/History/Email YYYY-MM.md``).
 
 _REPLY = re.compile(r"\b(re|fw|fwd)\s*(\[\d+\])?\s*:", re.I)
+ASSIST_NEWS_HOURS = 0     # promotions and newsletters: gone as they come (each named in Today.md first)
+ASSIST_NOTICE_HOURS = 1   # automated notices: after an hour
 FILE_HOURS = 1            # a receipt or payment confirmation is filed after an hour
 ARCHIVE_HOURS = 1         # an older email of a thread is archived an hour after a newer one came
 PURCHASE_NAMES = ("purchases", "purchased", "receipts", "purchased/receipts", "purchased/reciepts")
@@ -829,7 +832,8 @@ def assist_plan(entry: dict[str, Any], clean: dict[str, Any], kept: list[dict[st
     by_uid = {m["uid"]: m for m in kept}
     present, tried = set(clean.get("present") or []), {int(u) for u in clean.get("assisted") or []}
     cats = clean.get("cats") or {}
-    trash, tasked, files, threads = [], [], {}, {}
+    trash, tasked, files, threads, held = [], [], {}, {}, []
+    prep = _prep_state()
     for key, c in sorted(cats.items(), key=lambda kv: int(kv[0])):
         uid, m = int(key), by_uid.get(int(key))
         if uid not in present or uid in tried or not c.get("received"):
@@ -838,26 +842,40 @@ def assist_plan(entry: dict[str, Any], clean: dict[str, Any], kept: list[dict[st
         scam, alert = bool((m or {}).get("scam")), job_alert(c, m)
         jl = (m or {}).get("jobs") or []
         scam = scam or (bool(jl) and all(j.get("fit") == "scam" for j in jl))   # only fake job offers in it
+        text = f"{c.get('subject') or ''} {c.get('from') or ''} {c.get('from_addr') or ''}".lower()
+        kw = any(w and w.lower() in text for w in clean.get("keep_words") or [])
+        if alert and not scam and jl and (m or {}).get("jobs_for") and not kw:
+            # a job board's alert once rated: nothing for him, it goes; jobs that fit, Hisho holds them (the good
+            # ones' notes, Today.md's list with links), so the alert goes to Archive once each good one has its note
+            fits = [j for j in jl if j.get("fit") in ("good", "maybe")]
+            if not fits:
+                trash.append(_item(uid, c, "Job alerts"))
+            elif all((prep.get(j["key"]) or {}).get("verdict") for j in fits if j["fit"] == "good"):
+                held.append(_item(uid, c, "Job alert (jobs kept in Hisho)"))
+            continue
+        if c.get("group") == "Notifications" and (m or {}).get("label") == "Bill or invoice" and not junk \
+                and not (m or {}).get("pressing") and not kw and age >= FILE_HOURS:
+            # a statement ready, money received, a payment scheduled: a record, filed with the payments
+            files.setdefault(file_folder(entry, "Payments", found or []), []).append(_item(uid, c, "Payments"))
+            continue
         if c.get("group") in CLEAN_GROUPS or alert or scam:
             if never_clean(c, m, clean):
                 continue
             wait = 0 if scam or c.get("group") == "Junk" else 24 * JOB_ALERT_DAYS if alert \
-                else NOTICE_MIN_HOURS if c.get("group") == "Notifications" else CLEAN_MIN_HOURS
+                else ASSIST_NOTICE_HOURS if c.get("group") == "Notifications" else ASSIST_NEWS_HOURS
             if age >= wait:
                 it = _item(uid, c, "Junk" if scam else "Job alerts" if alert else c["group"])
                 # a notice that asks something of him: the task goes on his Hisho list, the email to Archive (a record)
                 (tasked if it.get("todo") and not junk else trash).append(it)
         elif c.get("group") in FILE_GROUPS and not junk and age >= FILE_HOURS:   # a receipt's task rides along
-            text = f"{c.get('subject') or ''} {c.get('from') or ''}".lower()
-            if (m or {}).get("pressing") or (m or {}).get("label") in ("Needs reply", "Customer request", "Deadline") \
-                    or any(w and w.lower() in text for w in clean.get("keep_words") or []):
+            if (m or {}).get("pressing") or (m or {}).get("label") in ("Needs reply", "Customer request", "Deadline") or kw:
                 continue
             files.setdefault(file_folder(entry, c["group"], found or []), []).append(_item(uid, c, c["group"]))
         elif inbox and c.get("group") == "Keep" and not c.get("bulk"):
             subj, dom = norm_subject(c.get("subject")), str(c.get("from_addr") or "").rpartition("@")[2]
             if len(subj) > 3 and dom:   # only a conversation (a Re: / Fwd: in it), never look-alike notices
                 threads.setdefault((subj, dom), []).append((c["received"], uid, c, m))
-    archive = list(tasked)
+    archive = list(tasked) + (held if inbox else [])
     for (_s, _d), its in threads.items():
         its.sort(key=lambda t: t[0])
         if not _REPLY.search(str(its[-1][2].get("subject") or "")):
@@ -938,6 +956,11 @@ def assist(entry: dict[str, Any], ctx: Any, clean: dict[str, Any], kept: list[di
                         "items": [it for it in items if it["uid"] in moved]})
         clean["assisted"] = sorted({int(u) for u in clean.get("assisted") or []}
                                    | ({it["uid"] for it in items} if res.get("ok") else set()))[-20000:]
+    held = {it["uid"] for d in did if d["what"] == "archive" for it in d["items"] if it["group"].startswith("Job alert (")}
+    for m in kept:   # an archived job alert stays in Hisho's job list (Today.md, the page) for its two weeks
+        if m["uid"] in held:
+            m["held_in_hisho"] = True
+    gone -= held
     for d in did:   # what a moved email asked of him stays in Hisho, on Today.md's task list, until he ticks it
         for it in d["items"]:
             if it.get("todo"):
@@ -2304,7 +2327,7 @@ def _all_messages(name: str, entry: dict[str, Any], dedupe: bool = True, gone: b
     out = []
     for sname, folder in streams(name, entry):
         for m in load_state(sname).get("messages") or []:
-            if gone or not m.get("gone"):
+            if gone or not m.get("gone") or m.get("held_in_hisho"):   # an alert Hisho archived: its jobs still count
                 out.append({**m, "folder": folder, "_stream": sname})
     if not dedupe:
         return out
