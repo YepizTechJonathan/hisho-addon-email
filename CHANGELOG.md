@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.27.0
+
+- The web check of a job first opens the job's own link in Core's enclosed browser on a worker (gVisor, no mounts,
+  internet only, deleted after; `hisho.sandbox`): where it really goes and what it shows are handed to the check as
+  data, and the note says "Opened safely ... the link goes to ...". Without a worker or an older Core the check goes on
+  without it.
+
 ## 0.26.0
 
 - Each job got ready to apply is checked on the web, one a poll: a Claude with only web search and page reading
