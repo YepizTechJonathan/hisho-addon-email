@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.20.0
+
+- Clean-up keeps up with the inbox: new mail is sorted for clean-up on every 5-minute read (it was sorted once a day
+  at 5 AM, so a day and a half of mail was never on a card), and a card is made at 8 AM and 6 PM instead of once a
+  day. Newsletters, promotions and junk are offered once they're 3 hours old (was a day), notices after a day (was
+  two). Job alerts still wait a week; Keep mail, bills, people and anything pressing are never offered.
+
 ## 0.19.1
 
 - Kimble Group and RecruitMilitary count as job boards. A job email from a sender the list doesn't know is treated

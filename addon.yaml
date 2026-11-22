@@ -2,7 +2,7 @@
 # smart filters, your own; not Trash, Drafts or templates) and Sent with IMAP EXAMINE and reads
 # with BODY.PEEK, so nothing is marked read, moved, flagged or deleted. Replies are DRAFTED and put on Hisho's
 # Approvals list; one is sent (send.py, SMTP) only when you press Send on its card, exactly as shown there.
-# Clean-up: once a day a card lists the newsletters, promotions, junk and old notices you don't need; Approve moves
+# Clean-up: new mail is sorted as it comes; at 8 AM and 6 PM a card lists the newsletters, promotions, junk and old notices you don't need; Approve moves
 # exactly those to Trash (cleanup.py, the only code that changes a mailbox; never a permanent delete).
 # Every 5 minutes it reads what is new, has Claude (tools off) give each message one label and a one-line
 # summary, keeps them on Core's machine only (~/.local/state/hisho/addons/email/, never the vault), lists them
@@ -17,7 +17,7 @@ name: email
 kind: integration
 title: Email
 description: Reads your company inboxes, drafts replies and clean-ups; sends or moves to Trash only when you approve.
-version: 0.19.1
+version: 0.20.0
 you_need:
   - "A mailbox that offers IMAP and SMTP (Gmail / Google Workspace, Zoho, iCloud, Yahoo, Fastmail, your host's mail...)"
   - "An app password for it (not your normal password); Set up this mailbox says where your provider makes one"

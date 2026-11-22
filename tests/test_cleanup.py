@@ -141,17 +141,27 @@ def test_the_first_scan_reads_the_whole_inbox_headers_only_and_makes_one_card():
     assert news["text"] == "Zoho Team (2): new features; webinar"
 
 
-def test_one_card_a_day_and_nothing_offered_twice():
+def test_a_card_at_8_and_6_and_nothing_offered_twice():
+    box = Box(INBOX, SENT)
+    poll(box, sorter(GROUPS))                                   # 6 AM: the first card
+    poll(box, sorter(GROUPS), now=NOW + dt.timedelta(hours=1))  # 7 AM: same card time, no new card
+    assert len((mod.load_state("pp")["cleanup"]["cards"])) == 1
+    st = poll(box, sorter(GROUPS), now=NOW + dt.timedelta(hours=3))   # 9 AM: past 8 AM
+    cards = st["cleanup"]["cards"]
+    assert len(cards) == 2
+    new = [v for k, v in cards.items() if k.endswith("2026-10-26-2")]
+    assert [it["uid"] for it in new[0]["items"]] == [8]        # only the one that is now 3 hours old
+    poll(box, sorter(GROUPS), now=NOW + dt.timedelta(hours=8))  # 2 PM: nothing new until 6 PM
+    assert len((mod.load_state("pp")["cleanup"]["cards"])) == 2
+
+
+def test_new_mail_is_sorted_on_every_poll_not_only_at_card_time():
     box = Box(INBOX, SENT)
     poll(box, sorter(GROUPS))
-    later = NOW + dt.timedelta(hours=3)
-    poll(box, sorter(GROUPS), now=later)                       # same day: no new scan
-    assert len((mod.load_state("pp")["cleanup"]["cards"])) == 1
-    tomorrow = NOW + dt.timedelta(days=1)
-    st = poll(box, sorter(GROUPS), now=tomorrow)
-    cards = st["cleanup"]["cards"]
-    new = [v for k, v in cards.items() if k.endswith("2026-10-27")]
-    assert [it["uid"] for it in new[0]["items"]] == [8]        # only the one that is now a day old
+    box.folders["INBOX"][9] = mail("Flash sale tonight", sender="Shop <deals@shop.com>", bulk=True)
+    ask = sorter({**GROUPS, "Flash sale tonight": ("Promotions", "flash sale")})
+    st = poll(box, ask, now=NOW + dt.timedelta(minutes=5))     # 6:05 AM: no card due, but it is sorted
+    assert st["cleanup"]["cats"]["9"]["group"] == "Promotions" and len(st["cleanup"]["cards"]) == 1
 
 
 def test_one_card_per_folder_while_it_waits_on_the_approvals_list(monkeypatch):

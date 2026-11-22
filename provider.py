@@ -87,9 +87,10 @@ SENT_KEEP = 2000          # Sent references remembered
 CLEAN_GROUPS = ("Newsletters", "Promotions", "Junk", "Notifications")   # "Jobs" and "Keep" never go
 CARD_GROUPS = (*CLEAN_GROUPS, "Job alerts")   # a card's sections: the clutter groups, then week-old job alerts
 NEVER_CLEAN = ("Needs reply", "Customer request", "Deadline", "Bill or invoice", "Job search")
-CLEAN_MIN_DAYS = 1        # the owner has had a day to see it (Today.md)
-NOTICE_MIN_DAYS = 2       # verification codes / automated notices: two
-CLEAN_HOUR = 5            # the day's card is made from 5 AM the owner's time (before the 6 AM Today refresh)
+CLEAN_MIN_HOURS = 3       # newsletters, promotions, junk: the owner has had a few hours to see it (0.20.0, was a day)
+NOTICE_MIN_HOURS = 24     # verification codes / automated notices: a day (was two)
+CLEAN_HOURS = (8, 18)     # a card is made at 8 AM and 6 PM the owner's time (0.20.0, was once a day at 5 AM);
+                          # new mail is sorted on every poll, so a card offers everything old enough
 CLEAN_SCAN_MAX = 500      # headers read per scan (the first one covers the whole inbox, in steps of this)
 CLEAN_CARD_DAYS = 7       # an unanswered card is offered this long
 #: after Zoho refuses a login, wait this long before trying the SAME password again (a new value is tried at once):
@@ -428,12 +429,21 @@ def _owner_day(now: dt.datetime) -> tuple[str, int]:
     return t.date().isoformat(), t.hour
 
 
+def _card_slot(now: dt.datetime) -> str:
+    """The latest card time (CLEAN_HOURS) at or before ``now``, e.g. "2026-11-22 18"; before the first, yesterday's last."""
+    t = now.astimezone(_tz())
+    past = [h for h in CLEAN_HOURS if h <= t.hour]
+    if not past:
+        return f"{(t.date() - dt.timedelta(days=1)).isoformat()} {max(CLEAN_HOURS):02d}"
+    return f"{t.date().isoformat()} {max(past):02d}"
+
+
 def _cleanup_due(clean: dict[str, Any], now: dt.datetime) -> bool:
-    day, hour = _owner_day(now)
-    return bool(clean.get("force")) or (hour >= CLEAN_HOUR and clean.get("day") != day)
+    """A card is due: "Clean up now", or a card time (CLEAN_HOURS) passed since the last card was made."""
+    return bool(clean.get("force")) or clean.get("slot") != _card_slot(now)
 
 
-def scan_inbox(conn: Any, validity: str, clean: dict[str, Any]) -> dict[str, Any]:
+def scan_inbox(conn: Any, validity: str, clean: dict[str, Any], present: list[int] | None = None) -> dict[str, Any]:
     """Headers of inbox mail not looked at yet (the first scan: the whole inbox, CLEAN_SCAN_MAX at a time),
     and which UIDs are still there. Read only: UID SEARCH ALL and BODY.PEEK[HEADER.FIELDS ...]."""
     clean = dict(clean)
@@ -443,8 +453,9 @@ def scan_inbox(conn: Any, validity: str, clean: dict[str, Any]) -> dict[str, Any
     if int(clean.get("sort_version") or 1) < SORT_VERSION:   # 0.16.1: job mail sorted again, fake offers are Junk
         clean["cats"] = {u: c for u, c in (clean.get("cats") or {}).items() if c.get("group") != "Jobs"}
         clean["sort_version"] = SORT_VERSION
-    typ, data = conn.uid("SEARCH", None, "ALL")
-    present = sorted(int(u) for u in ((data or [b""])[0] or b"").split()) if typ == "OK" else []
+    if present is None:   # the poll's own UID SEARCH ALL is passed in when it has one
+        typ, data = conn.uid("SEARCH", None, "ALL")
+        present = sorted(int(u) for u in ((data or [b""])[0] or b"").split()) if typ == "OK" else []
     clean["present"] = present
     todo = [u for u in present if str(u) not in clean["cats"]][-CLEAN_SCAN_MAX:]
     clean["pending"] = []
@@ -538,7 +549,6 @@ def sort_for_cleanup(entry: dict[str, Any], clean: dict[str, Any], kept: list[di
         for n, x in enumerate(batch, 1):
             got = said.get(n, {"group": "Keep", "about": ""})
             clean["cats"][str(x["uid"])] = {**x, **got}
-    clean.pop("force", None)
     clean["day"], _h = _owner_day(now)
     clean["error"] = str(clean.get("error") or "") if str(clean.get("error") or "").startswith("sorting") else ""
     return clean
@@ -616,10 +626,12 @@ def keep_words(entry: dict[str, Any]) -> list[str]:
 def make_cleanup_card(name: str, entry: dict[str, Any], clean: dict[str, Any], kept: list[dict[str, Any]],
                       validity: str, now: dt.datetime, junk: bool = False,
                       waiting: set[str] | None = None, skip_ids: set[str] | None = None) -> dict[str, Any]:
-    """Today's card: every email that may be cleaned, is old enough, is still in the inbox and wasn't offered.
+    """This card time's card: every email that may be cleaned, is old enough, is still in the inbox and wasn't offered.
     One card per folder: while an earlier one still waits on the Approvals list (``waiting``), it stays (whatever
     its age) and no new one is made; what came in meanwhile is offered on the next card, after that one is decided."""
     clean = dict(clean)
+    clean.pop("force", None)
+    clean["slot"] = _card_slot(now)   # this card time is done, whether or not anything was old enough
     clean["keep_words"] = keep_words(entry)
     if not cleanable(str(entry.get("folder") or "INBOX"), junk):
         clean["cards"] = {}
@@ -633,9 +645,9 @@ def make_cleanup_card(name: str, entry: dict[str, Any], clean: dict[str, Any], k
             continue
         if c.get("message_id") and c["message_id"] in (skip_ids or set()):
             continue   # also in the inbox: the inbox's card offers it
-        age = CLEAN_MIN_DAYS if (by_uid.get(uid) or {}).get("scam") else JOB_ALERT_DAYS if job_alert(c, by_uid.get(uid)) \
-            else NOTICE_MIN_DAYS if c["group"] == "Notifications" else CLEAN_MIN_DAYS
-        if c["received"] > (now - dt.timedelta(days=age)).isoformat():
+        hours = CLEAN_MIN_HOURS if (by_uid.get(uid) or {}).get("scam") else 24 * JOB_ALERT_DAYS \
+            if job_alert(c, by_uid.get(uid)) else NOTICE_MIN_HOURS if c["group"] == "Notifications" else CLEAN_MIN_HOURS
+        if c["received"] > (now - dt.timedelta(hours=hours)).isoformat():
             continue
         items.append({"uid": uid, "message_id": c.get("message_id") or "", "from": c["from"], "from_addr": c["from_addr"],
                       "subject": c["subject"], "about": c.get("about") or "", "date": c["received"][:10],
@@ -1443,12 +1455,12 @@ def _poll_one(name: str, entry: dict[str, Any], ctx: Any, *, now: dt.datetime | 
             got = _fetch_parts(conn, [c["uid"] for c in backlog], f"(UID BODY.PEEK[]<0.{FETCH_BYTES}>)") if backlog else {}
             backlog = [{**c, "body": parse_message(got[c["uid"]])["body"]} for c in backlog if c["uid"] in got]
         clean = state.get("cleanup") or {}
-        scanning = _cleanup_due(clean, now) and cleanable(str(entry.get("folder") or "INBOX"), junk)
+        scanning = cleanable(str(entry.get("folder") or "INBOX"), junk)   # every poll: new mail is sorted as it comes
         if scanning:
-            clean = scan_inbox(conn, validity, clean)            # inbox still open, read only (headers)
+            clean = scan_inbox(conn, validity, clean, present)   # inbox still open, read only (headers)
         state["sent"] = sent if sent is not None else \
             read_sent(conn, str(entry.get("sent_folder") or "Sent"), state.get("sent") or {}, now)
-        if scanning:
+        if scanning and _cleanup_due(clean, now):   # who the owner wrote to: read at card times, not every poll
             clean = read_contacts(conn, str(entry.get("sent_folder") or "Sent"), clean)
         if reviewing:
             review = read_replies(conn, str(entry.get("sent_folder") or "Sent"), review,
@@ -1537,7 +1549,8 @@ def _poll_one(name: str, entry: dict[str, Any], ctx: Any, *, now: dt.datetime | 
     if scanning:
         try:
             clean = sort_for_cleanup(entry, clean, kept, now, ask)
-            clean = make_cleanup_card(name, entry, clean, kept, validity, now, junk=junk, waiting=waiting_cards())
+            if _cleanup_due(clean, now):
+                clean = make_cleanup_card(name, entry, clean, kept, validity, now, junk=junk, waiting=waiting_cards())
         except Exception as exc:  # noqa: BLE001 -- tried again at the next poll
             clean["error"] = str(exc)[:200]
     state["cleanup"] = clean

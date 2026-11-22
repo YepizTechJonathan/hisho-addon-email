@@ -7,7 +7,7 @@ Reads your company inboxes, tells you what needs you, and drafts replies; **noth
 - Every 5 minutes it reads what is new in each mailbox, **read only**: **every folder** (`folders`, default `all`:
   Archive, Spam, Zoho's smart filters, your own, and new ones as you make them; never Trash, Drafts or templates) and
   the Sent folder are opened with IMAP EXAMINE and read with BODY.PEEK, so nothing is marked read, moved, flagged or
-  deleted. Junk in **Spam** is offered on the daily clean-up card (moved to Trash only when you approve) and only counted
+  deleted. Junk in **Spam** is offered on the clean-up card (moved to Trash only when you approve) and only counted
   in Today.md; a Spam email that looks real (it needs you, it's from someone you wrote to, or it answers your mail)
   shows as "possibly misfiled: check it", never drafted, carded or pushed. Mail you **move** to another folder (Archive, back from Snoozed) is recognised by its Message-ID: it is
   listed once, where it is now, and never labelled, drafted, carded or pushed a second time.
@@ -25,11 +25,11 @@ Reads your company inboxes, tells you what needs you, and drafts replies; **noth
 - Sending (`send.py`, the only file with SMTP): one plain-text message from the mailbox the email came to, to the
   card's To and Cc only (no Bcc, no attachments), threaded, at most `max_sends_per_hour` per mailbox (default 10).
   Zoho files SMTP mail in Sent itself; Hisho checks and puts a copy there only if it didn't. Every send is journaled.
-- **Clean-up**: once a day (from 5 AM, when there's anything), one "Clean up" card per mailbox on the Approvals
+- **Clean-up**: new mail is sorted on every 5-minute read, and at 8 AM and 6 PM (when there's anything) one "Clean up" card per mailbox on the Approvals
   page: the newsletters, promotions, junk and old notices you don't need, grouped by sender with a few words on what
   each was about (the first one covers the whole inbox). It never offers a reply you owe, a customer, a bill or
-  invoice, a deadline, anything pressing, anything from someone you've written to, or mail less than a day old
-  (notices: two days). **Edit** unticks emails or whole senders, or "always keep" a sender (remembered);
+  invoice, a deadline, anything pressing, anything from someone you've written to, or mail less than 3 hours old
+  (notices: a day; job alerts: a week). **Edit** unticks emails or whole senders, or "always keep" a sender (remembered);
   **Move to Trash** moves exactly the ticked ones (checked by UID and Message-ID first) to Zoho's Trash, which keeps
   them about 30 days. `cleanup.py` is the only code that changes a mailbox: it can only move the approved messages to
   Trash (never a permanent delete). Today.md says what was cleaned up. "Clean up now" on this page makes a card now.
@@ -113,7 +113,7 @@ before.
 
 ## How to use
 
-**Add-ons > Email** shows each mailbox: what needs a reply, customer requests, bills and deadlines, with a drafted reply for each. **Send** puts the draft on Approvals: nothing goes out until you press Approve there. A daily **Clean up** card suggests newsletters and junk to move to Trash, again only on your press. The page is private: only your own devices see it.
+**Add-ons > Email** shows each mailbox: what needs a reply, customer requests, bills and deadlines, with a drafted reply for each. **Send** puts the draft on Approvals: nothing goes out until you press Approve there. A twice-daily **Clean up** card suggests newsletters and junk to move to Trash, again only on your press. The page is private: only your own devices see it.
 
 **Ask Hisho can draft for you.** In the dashboard's chat, say something like "draft a reply to Renée pointing her to
 the request form, from my example.tech email". Hisho finds the email (any mailbox, the last two weeks), writes the reply
