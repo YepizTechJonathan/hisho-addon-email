@@ -829,7 +829,7 @@ def assist_plan(entry: dict[str, Any], clean: dict[str, Any], kept: list[dict[st
     by_uid = {m["uid"]: m for m in kept}
     present, tried = set(clean.get("present") or []), {int(u) for u in clean.get("assisted") or []}
     cats = clean.get("cats") or {}
-    trash, files, threads = [], {}, {}
+    trash, tasked, files, threads = [], [], {}, {}
     for key, c in sorted(cats.items(), key=lambda kv: int(kv[0])):
         uid, m = int(key), by_uid.get(int(key))
         if uid not in present or uid in tried or not c.get("received"):
@@ -844,8 +844,10 @@ def assist_plan(entry: dict[str, Any], clean: dict[str, Any], kept: list[dict[st
             wait = 0 if scam or c.get("group") == "Junk" else 24 * JOB_ALERT_DAYS if alert \
                 else NOTICE_MIN_HOURS if c.get("group") == "Notifications" else CLEAN_MIN_HOURS
             if age >= wait:
-                trash.append(_item(uid, c, "Junk" if scam else "Job alerts" if alert else c["group"]))
-        elif c.get("group") in FILE_GROUPS and not junk and age >= FILE_HOURS:
+                it = _item(uid, c, "Junk" if scam else "Job alerts" if alert else c["group"])
+                # a notice that asks something of him: the task goes on his Hisho list, the email to Archive (a record)
+                (tasked if it.get("todo") and not junk else trash).append(it)
+        elif c.get("group") in FILE_GROUPS and not junk and age >= FILE_HOURS:   # a receipt's task rides along
             text = f"{c.get('subject') or ''} {c.get('from') or ''}".lower()
             if (m or {}).get("pressing") or (m or {}).get("label") in ("Needs reply", "Customer request", "Deadline") \
                     or any(w and w.lower() in text for w in clean.get("keep_words") or []):
@@ -855,7 +857,7 @@ def assist_plan(entry: dict[str, Any], clean: dict[str, Any], kept: list[dict[st
             subj, dom = norm_subject(c.get("subject")), str(c.get("from_addr") or "").rpartition("@")[2]
             if len(subj) > 3 and dom:   # only a conversation (a Re: / Fwd: in it), never look-alike notices
                 threads.setdefault((subj, dom), []).append((c["received"], uid, c, m))
-    archive = []
+    archive = list(tasked)
     for (_s, _d), its in threads.items():
         its.sort(key=lambda t: t[0])
         if not _REPLY.search(str(its[-1][2].get("subject") or "")):
@@ -936,6 +938,17 @@ def assist(entry: dict[str, Any], ctx: Any, clean: dict[str, Any], kept: list[di
                         "items": [it for it in items if it["uid"] in moved]})
         clean["assisted"] = sorted({int(u) for u in clean.get("assisted") or []}
                                    | ({it["uid"] for it in items} if res.get("ok") else set()))[-20000:]
+    for d in did:   # what a moved email asked of him stays in Hisho, on Today.md's task list, until he ticks it
+        for it in d["items"]:
+            if it.get("todo"):
+                try:
+                    from hisho.today import add_task
+                    where = "Archive" if d["what"] == "archive" else d["folder"] or "Trash"
+                    add_task(Path(os.environ.get("HISHO_ROOT") or "~/Hisho").expanduser(),
+                             f"{it['todo']} ({_clean(it['from'] or it['from_addr'], 40)}, {entry.get('company') or ''} email "
+                             f"of {it['date']}, now in {where})")
+                except Exception:  # noqa: BLE001 -- the brief still names it
+                    pass
     cutoff = (now - dt.timedelta(days=DID_DAYS)).isoformat()
     clean["did"] = [d for d in clean.get("did") or [] if d["at"] >= cutoff] + did
     clean["present"] = [u for u in clean.get("present") or [] if u not in gone]
@@ -1138,11 +1151,11 @@ def did_lines(entry: dict[str, Any], cleans: list[dict[str, Any]], now: dt.datet
     bits = ([f"{len(news)} promotions and newsletters removed"] if news else []) \
         + ([f"{junk} junk and scams removed"] if junk else []) + ([f"{other} old notices and alerts removed"] if other else []) \
         + [f"{n} filed in {f}" for f, n in filed.items()] + ([f"{archived} older emails of a thread archived"] if archived else [])
-    todos = [it for d in did if d["what"] in ("trash", "file") for it in d["items"] if it.get("todo")]
+    todos = [it for d in did if d["what"] in ("trash", "file", "archive") for it in d["items"] if it.get("todo")]
     out = [] if not bits else [f"    - What I did (24 h): {', '.join(bits)}. Every one is in [[System/History/{history_path(now).stem}|History]]."]
     for it in todos:   # the email is gone, what it asked of him isn't
-        out.append(f"    - 📝 To do (from an email I removed): {_clean(it['todo'], 90)} ({_clean(it['from'] or it['from_addr'], 40)}, "
-                   f"{it['date']}). Skip it if you've done it already.")
+        out.append(f"    - 📝 Added to your tasks: {_clean(it['todo'], 90)} ({_clean(it['from'] or it['from_addr'], 40)}, "
+                   f"{it['date']}; the email is archived). Tick it off if you've done it already.")
     for what, it in events:   # said once, the day it was seen; the calendar reminds him a day and hours before
         out.append(f"    - 📅 {'Added to your calendar' if what == 'calendar' else 'Already on your calendar'}: "
                    f"{_clean(it['about'], 70)} ({_event_when(it['date'])}), from {_clean(it['from'], 40)}"

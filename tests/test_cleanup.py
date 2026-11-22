@@ -620,5 +620,33 @@ def test_a_task_from_a_removed_notice_lands_in_the_brief(monkeypatch, tmp_path):
             "date": "2026-10-23", "group": "Notifications", "todo": "Upload the AT&T receipt in Relay"}
     clean = {"did": [{"at": NOW.isoformat(), "what": "trash", "folder": "", "items": [item]}]}
     lines = mod.did_lines(ASSIST, [clean], NOW)
-    assert any("📝 To do (from an email I removed): Upload the AT&T receipt in Relay (Relay, 2026-10-23)" in x for x in lines)
+    assert any("📝 Added to your tasks: Upload the AT&T receipt in Relay (Relay, 2026-10-23" in x for x in lines)
     assert mod._item(1, {"todo": "Buy now", "received": "2026-10-23"}, "Promotions").get("todo") is None   # never for a sale
+
+
+
+def test_a_notice_with_a_task_is_archived_and_the_task_goes_on_the_list(monkeypatch, tmp_path):
+    added = []
+    import hisho.today
+    monkeypatch.setattr(hisho.today, "add_task", lambda root, text: added.append(text))
+    sorts = {**SORTS, "Your code is 123456": ("Notifications", "verification code")}
+    ask = sorter(sorts)
+    real = ask
+
+    def with_todo(prompt):
+        out = real(prompt)
+        return "\n".join(json.dumps({**json.loads(l), "todo": "Confirm your Agent Co account"})
+                         if json.loads(l)["group"] == "Notifications" else l for l in out.splitlines()) if out else out
+    monkeypatch.setattr(mod, "_claude", with_todo)
+    monkeypatch.setenv("HISHO_ROOT", str(tmp_path / "vault"))
+    TrashBox.log, TrashBox.caps, TrashBox.folders = [], ("IMAP4REV1", "MOVE", "UIDPLUS"), ["INBOX", "Trash", "Archive"]
+    realtrash = mod.cleaner.trash
+    monkeypatch.setattr(mod.cleaner, "trash", lambda e, pw, p, dest="": realtrash(e, pw, p, imap_factory=TrashBox, dest=dest))
+    ids = {u: f"<{abs(hash(mod.email.message_from_bytes(r)['Subject'] + str(mod.email.message_from_bytes(r)['From'])))}@x>"
+           for u, r in INBOX.items()}
+    orig = TrashBox.__init__
+    monkeypatch.setattr(TrashBox, "__init__", lambda self, h, p, **kw: (orig(self, h, p, **kw), setattr(self, "ids", ids))[0])
+    mod.poll("pp", ASSIST, Ctx(), now=NOW, ask=with_todo, connect_fn=lambda e, p: Box(INBOX, SENT))
+    got = dict((to, set(map(int, uids.split(",")))) for uids, to in moves())
+    assert 5 in got["Archive"] and 5 not in got["Trash"]
+    assert added and added[0].startswith("Confirm your Agent Co account (Agent Co, Globex email of 2026-10-23, now in Archive)")

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.25.0
+
+- A notice that asks something of the owner is no longer trashed: its task goes on Today.md's task list (Hisho keeps
+  the reminder until he ticks it) and the email goes to Archive as the record. Today.md says so once
+  ("📝 Added to your tasks"). Pure notices still go to Trash.
+
 ## 0.24.0
 
 - A notice the assistant removes can still ask something of the owner (upload a receipt, confirm an account): the
