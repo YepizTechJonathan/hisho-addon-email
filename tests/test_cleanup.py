@@ -668,7 +668,8 @@ def test_a_prepared_job_is_checked_on_the_web_and_a_fake_one_marked(monkeypatch,
     answer = {"Courser": {"verdict": "confirmed", "company_site": "https://courser.com", "opening_url": "https://courser.com/jobs/7",
                           "found": ["Listed on courser.com/careers"], "red_flags": []},
               "Fake Co": {"verdict": "looks fake", "found": [], "red_flags": ["No such company"]}}
-    web = lambda p: prompts.append(p) or json.dumps(next(v for k, v in answer.items() if f"company: {k}" in p))
+    web = lambda p: prompts.append(p) or "```json\n" + json.dumps(next(v for k, v in answer.items() if f"company: {k}" in p),
+                                                                indent=1) + "\n```"   # as Claude really answers
     opened = []
     page = lambda url: opened.append(url) or {"final_url": "https://courser.com/jobs/7", "title": "Help Desk", "text": "Apply",
                                               "machine": "worker-1"}

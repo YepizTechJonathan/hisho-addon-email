@@ -1095,7 +1095,7 @@ def assist_jobs(entry: dict[str, Any], kept: list[dict[str, Any]], now: dt.datet
         job = "\n".join(f"{k}: {str(j.get(k) or '').replace(nonce, '')}" for k in ("title", "company", "place", "pay", "why"))
         job += f"\nFrom: {_sender(m)}\nEmail text:\n{str(m.get('listing') or m.get('summary') or '')[:3000].replace(nonce, '')}"
         try:
-            got = _one_json((ask or _claude)(JOB_PREP_PROMPT.format(nonce=nonce, job=job, note=note[:jobs.PROFILE_CHARS].replace(nonce, ""))))
+            got = _json_object((ask or _claude)(JOB_PREP_PROMPT.format(nonce=nonce, job=job, note=note[:jobs.PROFILE_CHARS].replace(nonce, ""))))
         except Exception:  # noqa: BLE001 -- tried again next poll
             return
         if not isinstance(got, dict) or got.get("verdict") not in ("looks real", "can't tell", "looks fake"):
@@ -1174,7 +1174,7 @@ def _web_check(j: dict[str, Any], ask_web: Callable[[str], str] | None = None,
         f"{k}: {str(page.get(k) or '').replace(nonce, '')[:n]}" for k, n in
         (("final_url", 500), ("status", 10), ("title", 200), ("error", 200), ("text", 3000)))
     try:
-        got = _one_json((ask_web or _claude_web)(JOB_WEB_PROMPT.format(nonce=nonce, job=job, page=shown)))
+        got = _json_object((ask_web or _claude_web)(JOB_WEB_PROMPT.format(nonce=nonce, job=job, page=shown)))
     except Exception:  # noqa: BLE001 -- tried again next poll
         return None
     if not isinstance(got, dict) or got.get("verdict") not in ("confirmed", "likely real", "can't tell", "looks fake"):
@@ -1536,6 +1536,20 @@ Answer ONE line of JSON and nothing else:
 
 def signature(entry: dict[str, Any]) -> str:
     return sender.plain_signature(entry)
+
+
+def _json_object(text: str) -> dict[str, Any]:
+    """One JSON object an answer holds, over several lines or in a ```json fence too (the job checks)."""
+    raw = str(text or "")
+    a, b = raw.find("{"), raw.rfind("}")
+    if a >= 0 and b > a:
+        try:
+            got = json.loads(raw[a:b + 1])
+            if isinstance(got, dict):
+                return got
+        except ValueError:
+            pass
+    return _one_json(raw)
 
 
 def _one_json(text: str) -> dict[str, Any]:

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.27.1
+
+- The job checks read Claude's answer when it comes over several lines or in a ```json fence (the web check always
+  failed this way, so no job was checked yet).
+
 ## 0.27.0
 
 - The web check of a job first opens the job's own link in Core's enclosed browser on a worker (gVisor, no mounts,
