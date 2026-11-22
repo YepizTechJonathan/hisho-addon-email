@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.24.0
+
+- A notice the assistant removes can still ask something of the owner (upload a receipt, confirm an account): the
+  sorter names that task ("todo"), and Today.md lists it ("📝 To do (from an email I removed)") so nothing it asked
+  gets lost. Never for a sale, a newsletter, junk or a scam. Notices and receipts already sorted are sorted once more
+  (sort version 4).
+
 ## 0.23.0
 
 - The assistant gets good job matches ready: Claude (no tools, judging from the email only) says whether each looks

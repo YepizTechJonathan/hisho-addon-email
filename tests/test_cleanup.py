@@ -611,3 +611,14 @@ def test_a_good_job_is_got_ready_and_a_fake_one_marked(monkeypatch, tmp_path):
     calls = []
     mod.assist_jobs(ASSIST, kept, NOW, lambda p: calls.append(p) or "{}")
     assert calls == []                                       # each job once
+
+
+
+def test_a_task_from_a_removed_notice_lands_in_the_brief(monkeypatch, tmp_path):
+    monkeypatch.setenv("HISHO_ROOT", str(tmp_path / "vault"))
+    item = {"uid": 5, "from": "Relay", "from_addr": "no-reply@relay.com", "subject": "Upload a receipt", "about": "receipt ask",
+            "date": "2026-10-23", "group": "Notifications", "todo": "Upload the AT&T receipt in Relay"}
+    clean = {"did": [{"at": NOW.isoformat(), "what": "trash", "folder": "", "items": [item]}]}
+    lines = mod.did_lines(ASSIST, [clean], NOW)
+    assert any("📝 To do (from an email I removed): Upload the AT&T receipt in Relay (Relay, 2026-10-23)" in x for x in lines)
+    assert mod._item(1, {"todo": "Buy now", "received": "2026-10-23"}, "Promotions").get("todo") is None   # never for a sale
