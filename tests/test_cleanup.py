@@ -671,7 +671,7 @@ def test_a_prepared_job_is_checked_on_the_web_and_a_fake_one_marked(monkeypatch,
     web = lambda p: prompts.append(p) or json.dumps(next(v for k, v in answer.items() if f"company: {k}" in p))
     opened = []
     page = lambda url: opened.append(url) or {"final_url": "https://courser.com/jobs/7", "title": "Help Desk", "text": "Apply",
-                                              "machine": "hashira-ten"}
+                                              "machine": "worker-1"}
     mod.research_jobs(kept, NOW, web, page)
     mod.research_jobs(kept, NOW, web, page)
     mod.research_jobs(kept, NOW, web, page)                 # one a poll, each once
@@ -679,5 +679,5 @@ def test_a_prepared_job_is_checked_on_the_web_and_a_fake_one_marked(monkeypatch,
     assert len(prompts) == 2 and "Job search" not in prompts[0]   # nothing of the owner's goes to the web check
     note = (vault / "Companies/Personal/Job applications/Courser - Help Desk.md").read_text()
     assert note.index("## Checked on the web") < note.index("## Is it real?") and "https://courser.com/jobs/7" in note
-    assert "Opened safely (enclosed browser on hashira-ten)" in note
+    assert "Opened safely (enclosed browser on worker-1)" in note
     assert jobs_[1]["fit"] == "scam"
