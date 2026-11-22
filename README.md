@@ -112,6 +112,7 @@ mailbox shows "waiting for app password": no error and no alert.
   - `assistant` (bool, optional)
   - `purchases_folder` (str, optional)
   - `payments_folder` (str, optional)
+  - `bills_folder` (str, optional)
   - `archive_folder` (str, optional)
   - `note` (str, optional)
 

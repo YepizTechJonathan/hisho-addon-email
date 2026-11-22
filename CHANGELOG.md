@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.29.0
+
+- New sort groups, the owner's rules (2026-11-22): **Social** (a social network's automatic notice) goes at once,
+  unmentioned: he gets those in the apps. **Bills**: Hisho reads the bill (read only), keeps a row in
+  `<company>/Bills/<biller>.md` (amount, due, period, usage, autopay: his bill tracking), puts "Pay ... by ..." on
+  Today.md's task list unless it says autopay, and files the email in his Bills folder (made when missing).
+  **Account** notices (suspended, credit alerts, policy changes): a line in `<company>/Account notices.md` with why,
+  if this or an earlier email says; a task when it asks something (e.g. find out why); the email to Archive. Keep and
+  notices already sorted are sorted once more (sort version 5). `cleanup.read_bodies`: BODY.PEEK of those UIDs only.
+
 ## 0.28.0
 
 - The assistant keeps up the way the owner would (his check, 2026-11-22): promotions and newsletters go as they come

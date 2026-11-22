@@ -714,3 +714,34 @@ def test_an_archived_job_alert_keeps_its_jobs_in_hisho(monkeypatch, tmp_path):
     kept = [{"uid": 4, "jobs_for": "k", "jobs": [{"key": "g1", "fit": "good"}]}]
     clean, gone = mod.assist(ASSIST, Ctx(), clean, kept, NOW)
     assert gone == set() and kept[0]["held_in_hisho"] is True
+
+
+def test_bills_and_account_notices_are_noted_then_archived_social_goes(monkeypatch, tmp_path):
+    vault = tmp_path / "vault"
+    monkeypatch.setenv("HISHO_ROOT", str(vault))
+    added, moved = [], []
+    import hisho.today
+    monkeypatch.setattr(hisho.today, "add_task", lambda root, text: added.append(text))
+    monkeypatch.setattr(mod, "_prep_state", lambda: {})
+    monkeypatch.setattr(mod.cleaner, "read_bodies", lambda e, pw, uids: {
+        u: f"Subject: x\n\n{'Amount due $84.12, due Dec 5. Usage 512 kWh.' if u == 1 else 'Your account was suspended.'}".encode()
+        for u in uids})
+    monkeypatch.setattr(mod.cleaner, "trash", lambda e, pw, p, dest="": moved.append((dest, [i["uid"] for i in p["items"]]))
+                        or {"ok": True, "moved": [i["uid"] for i in p["items"]]})
+    answers = {1: {"company": "SCE", "summary": "Your bill is ready", "amount": "$84.12", "due": "2026-12-05",
+                   "period": "Oct 20 - Nov 19", "usage": "512 kWh", "autopay": False, "link_only": False,
+                   "todo": "Pay SCE $84.12 by Dec 5"},
+               2: {"company": "Unity", "summary": "Account suspended", "reason": "", "todo": "Find out why Unity suspended the account"}}
+    monkeypatch.setattr(mod, "_claude", lambda p: json.dumps(answers[2 if "Your account was suspended" in p else 1]))
+    old = (NOW - dt.timedelta(hours=2)).isoformat()
+    clean = {"present": [1, 2, 3], "keep_words": [], "cats": {
+        "1": {"group": "Bills", "from": "SCE", "from_addr": "sce@message.sce.com", "subject": "Bill is Ready", "received": old},
+        "2": {"group": "Account", "from": "Unity", "from_addr": "no-reply@unity.com", "subject": "Account suspended", "received": old},
+        "3": {"group": "Social", "from": "Instagram", "from_addr": "no-reply@mail.instagram.com", "subject": "1 new message",
+              "received": NOW.isoformat()}}}
+    clean, gone = mod.assist(ASSIST, Ctx(), clean, [], NOW)
+    assert ("", [3]) in moved and ("Bills", [1]) in moved and ("Archive", [2]) in moved and gone == {1, 2, 3}
+    bill = (vault / "Companies/Globex/Bills/SCE.md").read_text()
+    assert "| $84.12 | 2026-12-05 | Oct 20 - Nov 19 | 512 kWh | no |" in bill
+    assert "**Unity**: Account suspended" in (vault / "Companies/Globex/Account notices.md").read_text()
+    assert added[0].startswith("Pay SCE $84.12 by Dec 5") and added[1].startswith("Find out why Unity suspended the account")

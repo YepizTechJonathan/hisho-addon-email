@@ -208,3 +208,34 @@ def trash(entry: dict[str, Any], password: str, p: dict[str, Any], *,
             conn.logout()
         except Exception:  # noqa: BLE001
             pass
+
+
+def read_bodies(entry: dict[str, Any], password: str, uids: list[int], *, max_bytes: int = 20000,
+                imap_factory: Callable[..., Any] = TrashIMAP) -> dict[int, bytes]:
+    """The first ``max_bytes`` of these messages (BODY.PEEK: nothing marked read), for the assistant to note a bill or
+    an account notice before it archives it. Read only: the same guard, these UIDs only, no move at all."""
+    if not uids:
+        return {}
+    inbox = str(entry.get("folder") or "INBOX")
+    conn = imap_factory(str(entry.get("imap_host") or "imap.zoho.com"), int(entry.get("imap_port") or 993),
+                        ssl_context=ssl.create_default_context(), timeout=60)
+    conn.inbox, conn.trash, conn.uids = inbox, "\x00none", frozenset(uids)
+    out: dict[int, bytes] = {}
+    try:
+        conn.login(str(entry["address"]), password)
+        if conn.select(mailbox(inbox), readonly=True)[0] != "OK":
+            return {}
+        typ, data = conn.uid("FETCH", ",".join(str(u) for u in sorted(uids)), f"(UID BODY.PEEK[]<0.{int(max_bytes)}>)")
+        for part in (data or []) if typ == "OK" else []:
+            if isinstance(part, tuple) and len(part) >= 2:
+                m = _FETCH_HEAD.search(part[0])
+                if m:
+                    out[int(m.group(1))] = part[1]
+    except (imaplib.IMAP4.error, OSError, ssl.SSLError):
+        return out
+    finally:
+        try:
+            conn.logout()
+        except Exception:  # noqa: BLE001
+            pass
+    return out
