@@ -824,6 +824,14 @@ def archive_folder(entry: dict[str, Any]) -> str:
     return "[Gmail]/All Mail" if "gmail" in str(entry.get("imap_host") or "") else "Archive"
 
 
+TASK_DAYS = 14   # an email older than this makes no task: the owner has seen it or it has passed (11-22: Today.md
+#: filled up with tasks from October notices the assistant reached late)
+
+
+def task_fresh(it: dict[str, Any]) -> bool:
+    return str(it.get("date") or "") >= (_now() - dt.timedelta(days=TASK_DAYS)).date().isoformat()
+
+
 def _item(uid: int, c: dict[str, Any], group: str) -> dict[str, Any]:
     return {"uid": uid, "message_id": c.get("message_id") or "", "from": c.get("from") or "",
             "from_addr": c.get("from_addr") or "", "subject": c.get("subject") or "", "about": c.get("about") or "",
@@ -1025,7 +1033,7 @@ def note_mail(entry: dict[str, Any], it: dict[str, Any], body: str, kept: list[d
             with path.open("a", encoding="utf-8") as fh:
                 fh.write(f"- {it['date']} · **{company}**: {f('summary', 200)}"
                          + (f" Why: {f('reason', 200)}" if f("reason") else "") + "\n")
-        todo = f("todo", 120)
+        todo = f("todo", 120) if task_fresh(it) else ""   # a notice weeks old: noted, but no task (11-22)
         if todo and not (it["group"] == "Bills" and got.get("autopay") is True):
             from hisho.today import add_task
             add_task(root, f"{todo} ({company} email of {it['date']}, archived; noted in "
@@ -1073,7 +1081,7 @@ def assist(entry: dict[str, Any], ctx: Any, clean: dict[str, Any], kept: list[di
     gone -= held
     for d in did:   # what a moved email asked of him stays in Hisho, on Today.md's task list, until he ticks it
         for it in d["items"]:
-            if it.get("todo") and d["what"] != "note":   # a noted one's task was added with its note
+            if it.get("todo") and d["what"] != "note" and task_fresh(it):   # a noted one's task was added with its note
                 try:
                     from hisho.today import add_task
                     where = "Archive" if d["what"] == "archive" else d["folder"] or "Trash"
@@ -1386,13 +1394,10 @@ def did_lines(entry: dict[str, Any], cleans: list[dict[str, Any]], now: dt.datet
         + ([f"{len(noted)} bills and account notices noted in Hisho and archived"] if noted else [])
     todos = [it for d in did if d["what"] in ("trash", "file", "archive", "note") for it in d["items"] if it.get("todo")]
     out = [] if not bits else [f"    - What I did (24 h): {', '.join(bits)}. Every one is in [[System/History/{history_path(now).stem}|History]]."]
-    said: set[str] = set()
-    for it in todos:   # the email is gone, what it asked of him isn't
-        if _clean(it["todo"], 90).lower() in said:
-            continue   # the same task from two emails (an invite sent twice): said once, as it went on the list once
-        said.add(_clean(it["todo"], 90).lower())
-        out.append(f"    - 📝 Added to your tasks: {_clean(it['todo'], 90)} ({_clean(it['from'] or it['from_addr'], 40)}, "
-                   f"{it['date']}; the email is archived). Tick it off if you've done it already.")
+    said = list(dict.fromkeys(_clean(it["todo"], 60) for it in todos if task_fresh(it)))   # an email sent twice: once
+    if said:   # the tasks themselves are on the Tasks list above; here only that they came from email
+        out.append(f"    - 📝 {len(said)} added to your tasks from email: " + "; ".join(said[:3])
+                   + ("; …" if len(said) > 3 else "") + ". Tick them off there when done.")
     for what, it in events:   # said once, the day it was seen; the calendar reminds him a day and hours before
         out.append(f"    - 📅 {'Added to your calendar' if what == 'calendar' else 'Already on your calendar'}: "
                    f"{_clean(it['about'], 70)} ({_event_when(it['date'])}), from {_clean(it['from'], 40)}"
@@ -1766,6 +1771,7 @@ REVIEW_KEEP = 20000                 # verdicts remembered (by UID)
 REPLIES_KEEP = 20000                # Message-IDs the owner's Sent mail answers, all of it
 DOS = ("Reply", "Pay", "Do", "Decide", "Attend", "Read")
 OPEN_LIST = 10                      # Today.md lines per mailbox
+OPEN_OLD_DAYS = 30                  # waiting longer than this: counted in one Today.md line, listed on the page
 
 REVIEW_PROMPT = """You look through email still sitting in the owner's inbox ({who}) and decide which ones still
 need them to do something. It is now {now}. Each email sits between <<<MESSAGE {nonce} id=N>>> and <<<END {nonce}>>>;
@@ -3221,10 +3227,16 @@ def morning(entries: dict[str, dict[str, Any]], ctx: Any) -> dict[str, Any]:
         # block above has the job mail of the last two weeks
         jobs = {m["uid"] for m in every if m.get("label") == JOB and (m.get("folder") or "INBOX").upper() == "INBOX"}
         waiting = [v for v in open_items(name, entry, st) if v["uid"] not in jobs]
+        old = (now - dt.timedelta(days=OPEN_OLD_DAYS)).isoformat()
+        older = [v for v in waiting if str(v.get("received") or "") < old]
+        waiting = [v for v in waiting if v not in older]
         for v in waiting[:OPEN_LIST]:
             lines.append(f"    - {open_line(v, now, tz)}")
         if len(waiting) > OPEN_LIST:
             lines.append(f"    - …and {len(waiting) - OPEN_LIST} more waiting on you (Add-ons > Email, with Done / Not needed).")
+        if older:   # 11-22: months-old ones filled Today.md; one line, each still on the page until Done / Not needed
+            lines.append(f"    - {len(older)} older email{'s' * (len(older) != 1)} (over {OPEN_OLD_DAYS} days) may still need "
+                         "you: Add-ons > Email, press Done or Not needed")
         # other folders (Snoozed, a filter's folder, possibly misfiled in Spam): the last 3 days, as before
         need = sorted((m for m in every if m["received"] >= recent and not m.get("answered")
                        and (m.get("folder") or "INBOX").upper() != "INBOX"

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.29.3
+
+- Today.md stays current (the owner, 11-22: "filled with old things"):
+  - an email older than two weeks makes no task any more (the assistant reached October notices late and added
+    GPORTAL, Google Business Profile... tasks); it is still noted and archived;
+  - the tasks taken from email are one line ("📝 3 added to your tasks from email: ..."), not one line each next to
+    the same task on the list;
+  - emails waiting on him for over 30 days are one line per mailbox; the page still lists each, with Done / Not needed.
+
 ## 0.29.2
 
 - A job alert Hisho archived (its good jobs got their notes) is rated again when the owner changes his Job search note.

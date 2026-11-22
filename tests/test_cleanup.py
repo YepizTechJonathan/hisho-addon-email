@@ -619,10 +619,13 @@ def test_a_task_from_a_removed_notice_lands_in_the_brief(monkeypatch, tmp_path):
     item = {"uid": 5, "from": "Relay", "from_addr": "no-reply@relay.com", "subject": "Upload a receipt", "about": "receipt ask",
             "date": "2026-10-23", "group": "Notifications", "todo": "Upload the AT&T receipt in Relay"}
     clean = {"did": [{"at": NOW.isoformat(), "what": "trash", "folder": "", "items": [item]}]}
+    monkeypatch.setattr(mod, "_now", lambda: NOW)
     lines = mod.did_lines(ASSIST, [clean], NOW)
-    assert any("📝 Added to your tasks: Upload the AT&T receipt in Relay (Relay, 2026-10-23" in x for x in lines)
+    assert "    - 📝 1 added to your tasks from email: Upload the AT&T receipt in Relay. Tick them off there when done." in lines
     twice = {"did": [{"at": NOW.isoformat(), "what": "trash", "folder": "", "items": [item, {**item, "uid": 6}]}]}
-    assert sum("Added to your tasks" in x for x in mod.did_lines(ASSIST, [twice], NOW)) == 1   # an email sent twice: once
+    assert any("📝 1 added" in x for x in mod.did_lines(ASSIST, [twice], NOW))   # an email sent twice: once
+    stale = {"did": [{"at": NOW.isoformat(), "what": "trash", "folder": "", "items": [{**item, "date": "2026-09-01"}]}]}
+    assert not any("📝" in x for x in mod.did_lines(ASSIST, [stale], NOW))      # weeks old: no task (11-22)
     assert mod._item(1, {"todo": "Buy now", "received": "2026-10-23"}, "Promotions").get("todo") is None   # never for a sale
 
 
