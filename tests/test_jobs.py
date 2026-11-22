@@ -244,3 +244,9 @@ def test_an_unknown_sender_with_several_jobs_is_an_alert_not_a_person(mod):
     lines = mod.job_lines({"home": {**GMAIL}}, NOW, ZoneInfo("America/Los_Angeles"))
     assert lines[1] == "    - ⭐ **2 good matches**"
     assert mod.kind({"label": "Job search", "from_addr": "kimble@kimblegroup.com"}) == "jobalert"
+
+
+def test_an_alert_hisho_archived_is_rated_again_when_the_note_changes(mod):
+    held = {"uid": 1, "listing": "x", "links": [], "jobs_for": "old", "gone": NOW.isoformat(), "held_in_hisho": True}
+    deleted = {"uid": 2, "listing": "x", "links": [], "jobs_for": "old", "gone": NOW.isoformat()}
+    assert [m["uid"] for m in mod.jobs.to_rate([held, deleted], "new")] == [1]

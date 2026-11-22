@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.29.2
+
+- A job alert Hisho archived (its good jobs got their notes) is rated again when the owner changes his Job search note.
+  Before, archived alerts were skipped, so after a change the Job search block showed only "still being read".
+
 ## 0.29.1
 
 - Today.md says a task added from email once, even when two emails asked for it (an invite sent twice put the

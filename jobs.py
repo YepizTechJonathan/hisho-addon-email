@@ -249,8 +249,9 @@ def to_rate(kept: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
     def tries(m: dict[str, Any]) -> int:
         t = m.get("jobs_try") or ["", 0]
         return int(t[1]) if t[0] == key else 0
-    return [m for m in kept if m.get("listing") is not None and not m.get("gone") and m.get("jobs_for") != key
-            and tries(m) < MATCH_TRIES]
+    # an alert Hisho archived (``held_in_hisho``) keeps its listing and is rated again too: its jobs still show
+    return [m for m in kept if m.get("listing") is not None and (not m.get("gone") or m.get("held_in_hisho"))
+            and m.get("jobs_for") != key and tries(m) < MATCH_TRIES]
 
 
 def board(msgs: list[dict[str, Any]], note: str, *, sender: Callable[[dict[str, Any]], str]) -> dict[str, Any]:
