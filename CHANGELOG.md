@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.29.5
+
+- 0.29.4 again, its code comment without a personal name (the Souko image takes none).
+
 ## 0.29.4
 
 - Emails waiting on the owner are no longer a Needs you item (the owner, 11-23: "it notes it and reminds me, not

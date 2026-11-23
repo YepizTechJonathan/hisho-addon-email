@@ -2839,7 +2839,7 @@ def summary(entries: dict[str, dict[str, Any]], ctx: Any) -> dict[str, Any]:
             alike.add(same)
             problems.append(_pressing_problem(name, sname, sst, entry, company, m))
         # What still waits on the owner is noted and reminded (Today.md's Email section, Add-ons > Email), never a
-        # Needs you item of its own (Jonathan, 2026-11-23)
+        # Needs you item of its own (the owner, 2026-11-23)
     state = "warn" if "error" in states else "unknown" if all(s in ("waiting", "starting") for s in states) else "ok"
     out = {"state": state, "headline": " · ".join(heads), "problems": problems}
     if any(is_personal(e) for e in entries.values()):
