@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.29.4
+
+- Emails waiting on the owner are no longer a Needs you item (the owner, 11-23: "it notes it and reminds me, not
+  puts it on my Needs you page"): they stay in Today.md's Email section and on Add-ons > Email, with Done / Not needed.
+
 ## 0.29.3
 
 - Today.md stays current (the owner, 11-22: "filled with old things"):

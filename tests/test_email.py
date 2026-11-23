@@ -334,16 +334,14 @@ def _seeded(monkeypatch, alerts=None):
 def test_only_pressing_new_mail_alerts_and_alerts_false_keeps_it_quiet(monkeypatch):
     entry = _seeded(monkeypatch)
     out = mod.summary({"yt": entry}, Ctx())
-    assert [p["title"] for p in out["problems"]] == ["Acme: client problem from Sam Carter",   # not the first look's,
-                                                     "Acme (alex@example.com): 1 email waiting on you"]   # quiet
+    # what only waits on him is not a Needs you item (it is in Today.md and on the page): the pressing one alerts
+    assert [p["title"] for p in out["problems"]] == ["Acme: client problem from Sam Carter"]
     assert out["problems"][0]["quiet"] is False and out["problems"][0]["key"] == "msg-77-2"
     assert "2:41 PM PDT" in out["problems"][0]["detail"]
-    assert out["problems"][1]["quiet"] is True and out["problems"][1]["detail"].startswith("Customer: Ann, New logo?")
     later = NOW + dt.timedelta(hours=mod.ALERT_HOURS + 1)
     monkeypatch.setattr(mod, "_now", lambda: later)
-    # past its push: the client problem joins the quiet list of what still waits (unanswered, still in the inbox)
-    assert [p["title"] for p in mod.summary({"yt": entry}, Ctx())["problems"]] == [
-        "Acme (alex@example.com): 2 emails waiting on you"]
+    # past its push: the client problem joins the list of what still waits, off Needs you
+    assert mod.summary({"yt": entry}, Ctx())["problems"] == []
     monkeypatch.setattr(mod, "_now", lambda: NOW)
     assert mod.summary({"yt": {**entry, "alerts": False}}, Ctx())["problems"][0]["quiet"] is True
 

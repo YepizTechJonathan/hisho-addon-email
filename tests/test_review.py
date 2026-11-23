@@ -169,10 +169,7 @@ def test_today_needs_you_and_the_page_show_it_until_handled():
            "(Oct 30, 12 days ago, by Nov 20)" in lines
     assert "    - Reply: Matt at Support, the RAM stopped working: Send support a photo of the serial label " \
            "(Nov 3, 8 days ago)" in lines
-    probs = mod.summary({"home": ENTRY}, Ctx())["problems"]
-    assert [p["title"] for p in probs] == ["Personal (owner@example.com): 2 emails waiting on you"]
-    assert probs[0]["quiet"] is True and probs[0]["severity"] == "decision" and probs[0]["key"] == "open-2"
-    assert "Unofficial transcripts" in probs[0]["detail"] and "Done / Not needed" in probs[0]["detail"]
+    assert mod.summary({"home": ENTRY}, Ctx())["problems"] == []   # noted and reminded, not a Needs you item
     items = mod.details({"home": ENTRY}, Ctx())[0]["items"]
     pins = [i for i in items if i["id"].startswith("open-")]
     assert [i["name"] for i in pins] == ["📌 Do: Unofficial transcripts", "📌 Reply: RE: the RAM stopped working"]

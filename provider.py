@@ -2838,10 +2838,8 @@ def summary(entries: dict[str, dict[str, Any]], ctx: Any) -> dict[str, Any]:
                 continue
             alike.add(same)
             problems.append(_pressing_problem(name, sname, sst, entry, company, m))
-        pushed = {m.get("message_id") or m["uid"] for sname, _s, m in found if sname == name}
-        waiting = [v for v in open_items(name, entry, st) if (v.get("message_id") or v["uid"]) not in pushed]
-        if waiting:
-            problems.append(_open_problem(name, entry, company, waiting, now))
+        # What still waits on the owner is noted and reminded (Today.md's Email section, Add-ons > Email), never a
+        # Needs you item of its own (Jonathan, 2026-11-23)
     state = "warn" if "error" in states else "unknown" if all(s in ("waiting", "starting") for s in states) else "ok"
     out = {"state": state, "headline": " · ".join(heads), "problems": problems}
     if any(is_personal(e) for e in entries.values()):
@@ -2885,18 +2883,6 @@ def job_card(entries: dict[str, dict[str, Any]], now: dt.datetime) -> dict[str, 
         rows.append({"label": "Left out", "value": str(left), "url": page,
                      "detail": f"{len(b['no'])} not a fit, {len(b['scam'])} look fake, {len(b['hidden'])} you said no to"})
     return {"title": "Job search", "rows": rows}
-
-
-def _open_problem(name: str, entry: dict[str, Any], company: str, waiting: list[dict[str, Any]],
-                  now: dt.datetime) -> dict[str, Any]:
-    """Needs you: the emails in one inbox still waiting on the owner, one item (never pushed: the pressing ones push on
-    their own). Its key follows the newest of them, so "I know" holds until another one joins."""
-    n, tz = len(waiting), _tz()
-    lines = "; ".join(open_line(v, now, tz) for v in waiting[:3])
-    return {"entry": name, "severity": "decision", "quiet": True, "key": f"open-{max(int(v['uid']) for v in waiting)}",
-            "title": f"{company} ({entry.get('address')}): {n} email{'s' * (n != 1)} waiting on you",
-            "detail": lines + (f"; and {n - 3} more" if n > 3 else "")
-            + ". All of them on Add-ons > Email, with Done / Not needed."}
 
 
 def _pressing_problem(name: str, sname: str, st: dict[str, Any], entry: dict[str, Any], company: str,
