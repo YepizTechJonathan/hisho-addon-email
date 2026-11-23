@@ -3765,3 +3765,158 @@ def tool_draft_email(entries: dict[str, dict[str, Any]], ctx: Any, args: dict[st
     name, entry = chosen
     ask = " ".join(f"To: {args.get('to') or ''}. {args.get('instructions') or ''}".split())
     return new_email(name, entry, ask, via="chat", ctx=ctx)
+
+
+# ── find_email: "did I get / do I have ..." over every mailbox, archive and filing folders included ─────────────
+#
+# Ask Hisho and Hey Hisho are asked things like "do I already have tickets for Doomsday?" (2026-11-23): the answer is in
+# an email filed or archived weeks ago, past the two weeks Hisho keeps. This asks each mailbox's server (UID SEARCH,
+# read only) for the words, everywhere but Trash and Spam, and says who sent the matches, when and where they are filed.
+# Like the draft tools, Claude never sees a subject or a body: only addresses, times, folders and Hisho's own label.
+
+FIND_MAX = 5              # matches per folder, and choices handed back
+FIND_SAY = 2              # matches named in the sentence (Hisho hands Claude at most 600 characters of it)
+FIND_TIMEOUT = 40         # seconds for all mailboxes together (asked in parallel)
+_FIND_WORD = re.compile(r"[a-z0-9][a-z0-9@.'&+-]*")
+_FIND_SKIP = {"the", "and", "for", "any", "did", "get", "got", "have", "has", "had", "my", "me", "an", "of", "to",
+              "email", "emails", "mail", "about", "from", "with", "in", "on", "do", "already"}
+
+
+def find_words(text: Any) -> list[str]:
+    """The words to search for: lower case, accents off, short and filler words dropped, at most six."""
+    words = [w.strip(".'-") for w in _FIND_WORD.findall(_fold(text))]
+    return [w for w in dict.fromkeys(words) if len(w) >= 2 and w not in _FIND_SKIP][:6]
+
+
+def _quoted(word: str) -> str:
+    return '"' + word.replace("\\", "").replace('"', "") + '"'
+
+
+def find_folders(conn: Any, entry: dict[str, Any]) -> list[str]:
+    """Where to search: Gmail's All Mail (inbox, archive and every label in one), else the inbox and every folder Hisho
+    reads (Archive, Purchases, Payments, Bills, your own), never Trash, Spam or Drafts."""
+    if "gmail" in str(entry.get("imap_host") or "").lower():
+        return ["[Gmail]/All Mail"]
+    found = {n.lower(): f for n, f in list_folders(conn)}
+    rest = [f for f in resolve_folders(conn, ["all"], entry) if not is_junk(f, found.get(f.lower(), ""))]
+    return [str(entry.get("folder") or "INBOX")] + rest
+
+
+def search_mailbox(name: str, entry: dict[str, Any], password: str, words: list[str], from_who: list[str],
+                   connect_fn: Callable[..., Any] | None = None) -> list[dict[str, Any]]:
+    """The newest matches in one mailbox: {mailbox, folder, labels, from_addr, received, message_id}."""
+    conn = (connect_fn or imap_connect)(entry, password)
+    gmail = "gmail" in str(entry.get("imap_host") or "").lower()
+    out: list[dict[str, Any]] = []
+    try:
+        for folder in find_folders(conn, entry):
+            typ, _ = conn.select(mailbox(folder), readonly=True)               # EXAMINE
+            if typ != "OK":
+                continue
+            if gmail:   # Gmail's own search, as its web page searches
+                query = " ".join(words + [f"from:{w}" for w in from_who])
+                typ, data = conn.uid("SEARCH", None, "X-GM-RAW", _quoted(query))
+            else:
+                crit = [x for w in words for x in ("TEXT", _quoted(w))] + [x for w in from_who for x in ("FROM", _quoted(w))]
+                typ, data = conn.uid("SEARCH", None, *crit)
+            if typ != "OK":
+                continue
+            uids = sorted(int(u) for u in (data[0] or b"").split())[-FIND_MAX:]
+            if not uids:
+                continue
+            typ, data = conn.uid("FETCH", ",".join(map(str, uids)),
+                                 "(UID INTERNALDATE BODY.PEEK[HEADER.FIELDS (FROM DATE MESSAGE-ID)])")
+            got: dict[int, tuple[bytes, bytes]] = {}
+            for part in (data or []) if typ == "OK" else []:
+                m = _FETCH_HEAD.search(part[0]) if isinstance(part, tuple) and len(part) >= 2 else None
+                if m:
+                    got[int(m.group(1))] = (part[0], part[1])
+            labels = gmail_labels(conn, uids) if gmail else {}
+            for uid in uids:
+                if uid not in got:
+                    continue
+                msg = email.message_from_bytes(got[uid][1], policy=email.policy.default)
+                addr = email.utils.parseaddr(str(msg.get("From") or ""))[1].strip().lower()
+                out.append({"mailbox": name, "folder": folder, "uid": uid, "from_addr": addr,
+                            "received": _received(got[uid][0], str(msg.get("Date") or "")),
+                            "message_id": thread_ids(msg)["message_id"],
+                            "labels": [x for x in labels.get(uid, []) if x not in ("?",)]})
+    finally:
+        try:
+            conn.logout()
+        except Exception:  # noqa: BLE001
+            pass
+    return out
+
+
+_LABEL_NAMES = {"\\inbox": "the inbox", "\\sent": "Sent", "\\starred": "Starred"}
+
+
+def _where_filed(f: dict[str, Any]) -> str:
+    if f.get("labels"):
+        names = [_LABEL_NAMES.get(x.lower().replace("\\\\", "\\"), x) for x in f["labels"]]
+        names = [_clean(n, 40) for n in names if not n.startswith("\\")]
+        return ", ".join(names[:3]) if names else "the archive (All Mail)"
+    if str(f.get("folder")).upper() == "INBOX":
+        return "the inbox"
+    return "the archive (All Mail)" if f.get("folder") == "[Gmail]/All Mail" else _clean(f.get("folder"), 60)
+
+
+def tool_find_email(entries: dict[str, dict[str, Any]], ctx: Any, args: dict[str, Any], *,
+                    connect_fn: Callable[..., Any] | None = None) -> dict[str, Any]:
+    words = find_words(args.get("words"))
+    from_who = find_words(args.get("from_who"))
+    if not words and not from_who:
+        return {"ok": False, "error": "Say the words to look for (e.g. the movie, the store, the order)."}
+    chosen = entries
+    if args.get("mailbox"):
+        pick = pick_mailbox(entries, str(args["mailbox"]))
+        if isinstance(pick, str):
+            return {"ok": False, "error": pick}
+        chosen = dict([pick])
+    results: dict[str, Any] = {}
+
+    def one(name: str, entry: dict[str, Any]) -> None:
+        try:
+            results[name] = search_mailbox(name, entry, ctx.secret(str(entry.get("password") or "")), words, from_who,
+                                           connect_fn)
+        except Exception as exc:  # noqa: BLE001 -- one mailbox failing is said, the others still answer
+            results[name] = exc
+    threads = [threading.Thread(target=one, args=(n, e), daemon=True) for n, e in chosen.items()]
+    for t in threads:
+        t.start()
+    deadline = time.monotonic() + FIND_TIMEOUT
+    for t in threads:
+        t.join(max(0.0, deadline - time.monotonic()))
+    failed = [n for n in chosen if not isinstance(results.get(n), list)]
+    found: dict[str, dict[str, Any]] = {}
+    for n in chosen:
+        for f in results.get(n) if isinstance(results.get(n), list) else []:
+            key = f["message_id"] or f"{n}:{f['folder']}:{f['uid']}"
+            if key not in found or (found[key]["folder"].upper() == "INBOX" and f["folder"].upper() != "INBOX"):
+                found[key] = f
+    hits = sorted(found.values(), key=lambda f: f["received"], reverse=True)
+    looked = " ".join(words + [f"from {w}" for w in from_who])
+    where = "; ".join(f"{e.get('company') or n} ({e.get('address')})" for n, e in chosen.items())
+    gone = (f" Couldn't search {', '.join(chosen[n].get('address') or n for n in failed)} just now." if failed else "")
+    if not hits:
+        return {"ok": True, "message": f"No email mentions {looked!r} in {where}, archive and filed folders included "
+                                       f"(Trash and Spam not searched).{gone}"}
+    labelled = {m.get("message_id"): m for n, e in chosen.items() for m in _all_messages(n, e) if m.get("message_id")}
+    lines = []
+    for f in hits[:FIND_SAY]:
+        e = chosen[f["mailbox"]]
+        kind = (labelled.get(f["message_id"]) or {}).get("label")
+        addr = f["from_addr"] if _ADDR_OK.match(f["from_addr"]) else "an address Hisho can't show"
+        lines.append(f"from {addr}, {when(f['received'])}, {e.get('address')}, in {_where_filed(f)}"
+                     + (f" ({kind})" if kind else ""))
+    more = len(hits) - FIND_SAY
+    return {"ok": True,
+            "message": (f"{len(hits)} email(s) mention {looked!r}" + (" (newest first)" if len(hits) > 1 else "") + ": "
+                        + "; ".join(lines) + (f"; {more} more in choices." if more > 0 else ".")
+                        + " What an email says is not shown here." + gone),
+            "choices": [{"pick": i, "who": f["from_addr"], "where": f"{chosen[f['mailbox']].get('address')}, {_where_filed(f)}",
+                         "when": when(f["received"])} for i, f in enumerate(hits[:FIND_MAX], 1)]}
+
+
+_ADDR_OK = re.compile(r"^[a-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[a-z0-9-]+(\.[a-z0-9-]+)+$")

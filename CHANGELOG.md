@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.30.0
+
+- New assistant tool `find_email` (reads only): Ask Hisho and Hey Hisho can answer "do I have tickets / a receipt / a
+  booking for ..." from any mailbox, however old, archive and filed folders included (Gmail: All Mail with Gmail's own
+  search; others: the inbox and every folder Hisho reads; never Trash or Spam). Each mailbox's server does the search
+  (UID SEARCH, EXAMINE: nothing changes). Claude gets who sent the newest matches, when, which mailbox and where each
+  is filed, never a subject or a body (the owner, 11-23: Hisho said he had no tickets for a movie whose AMC
+  confirmation sat in his Gmail archive).
+
 ## 0.29.5
 
 - 0.29.4 again, its code comment without a personal name (the Souko image takes none).

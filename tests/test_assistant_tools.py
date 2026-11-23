@@ -184,5 +184,5 @@ def test_the_email_page_new_email_still_waits_on_approvals(_mod, monkeypatch):
 
 
 def test_the_manifest_offers_both_tools_through_hisho(addon):
-    assert set(addons.tools(addon)) == {"draft_reply", "draft_email"}
-    assert all(t["write"] for t in addons.tools(addon).values())
+    assert set(addons.tools(addon)) == {"draft_reply", "draft_email", "find_email"}
+    assert {k for k, t in addons.tools(addon).items() if t["write"]} == {"draft_reply", "draft_email"}
