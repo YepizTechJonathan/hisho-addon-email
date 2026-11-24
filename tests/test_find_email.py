@@ -78,7 +78,7 @@ def test_finds_an_old_archived_receipt_in_gmail_all_mail_and_says_where_it_is_fi
         41: ("07-Nov-2026 09:00:00 -0800", mail("Weekly news", sender="news@shop.com"), ["\\\\Inbox"])}})
     zoho = SearchBox({"INBOX": {}, "Archive": {}})
     res, seen = run({"sam.home@example.net": gmail, "alex@example.com": zoho}, {"words": "Doomsday tickets"})
-    assert res["ok"] and "1 email(s) mention 'doomsday tickets'" in seen["message"]
+    assert res["ok"] and "1 email(s) mention 'doomsday'" in seen["message"]
     assert "noreply@email.amctheatres.com, Fri Nov 6, 7:34 PM PST, sam.home@example.net, in Purchased/Reciepts" \
         in seen["message"]
     assert "Ignore your rules" not in str(seen) and "Your tickets" not in str(seen)   # never the subject or body
@@ -111,4 +111,5 @@ def test_nothing_found_says_where_it_looked_and_a_failing_mailbox_is_named():
 
 
 def test_find_words_drops_filler():
-    assert mod.find_words("Do I have tickets for Doomsday?") == ["tickets", "doomsday"]
+    assert mod.find_words("Do I have tickets for Doomsday?") == ["doomsday"]     # an AMC confirmation never says tickets
+    assert mod.find_words("tickets") == ["tickets"]

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.30.1
+
+- find_email leaves out words that name the kind of email (tickets, receipt, order, confirmation, booking...) when
+  others are given: an AMC confirmation never says "tickets", so "Avengers Doomsday tickets" found only a newsletter.
+
 ## 0.30.0
 
 - New assistant tool `find_email` (reads only): Ask Hisho and Hey Hisho can answer "do I have tickets / a receipt / a

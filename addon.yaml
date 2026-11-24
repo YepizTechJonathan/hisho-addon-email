@@ -17,7 +17,7 @@ name: email
 kind: integration
 title: Email
 description: Reads your company inboxes, drafts replies and clean-ups; sends or moves to Trash only when you approve.
-version: 0.30.0
+version: 0.30.1
 you_need:
   - "A mailbox that offers IMAP and SMTP (Gmail / Google Workspace, Zoho, iCloud, Yahoo, Fastmail, your host's mail...)"
   - "An app password for it (not your normal password); Set up this mailbox says where your provider makes one"
@@ -46,7 +46,7 @@ assistant_tools:
   find_email:
     description: "Look through every one of the owner's mailboxes for emails that mention some words (a movie, a store, an order, a booking), archive and filed folders included, however old (not Trash or Spam). Use it for \"did I get...\", \"do I have tickets / a receipt / a confirmation for...\". Says how many match and, for the newest, who sent it, when, which mailbox and where it is filed. It never shows what an email says; pair it with calendar for bookings. Reads only."
     params:
-      words: "str"             # what the email would mention, e.g. "Doomsday tickets" or "Corsair RMA"
+      words: "str"             # the name the email would hold: the movie, store, order number (e.g. "Doomsday", "Corsair RMA"); words like tickets or receipt are left out
       from_who: "str?"         # a sender's name, address or domain, e.g. "fandango" or "amctheatres.com"
       mailbox: "str?"          # one mailbox only: its name, company, address or domain (default: all of them)
     write: false

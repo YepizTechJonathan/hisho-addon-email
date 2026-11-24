@@ -3780,12 +3780,17 @@ FIND_TIMEOUT = 40         # seconds for all mailboxes together (asked in paralle
 _FIND_WORD = re.compile(r"[a-z0-9][a-z0-9@.'&+-]*")
 _FIND_SKIP = {"the", "and", "for", "any", "did", "get", "got", "have", "has", "had", "my", "me", "an", "of", "to",
               "email", "emails", "mail", "about", "from", "with", "in", "on", "do", "already"}
+# What the asker calls the email, not words it must hold: an AMC confirmation never says "tickets" (2026-11-23, the
+# search for "Avengers Doomsday tickets" found a Fever newsletter and missed it). Searched only when nothing else is left.
+_FIND_KIND = {"ticket", "tickets", "receipt", "receipts", "order", "orders", "confirmation", "confirmations",
+              "booking", "bookings", "reservation", "reservations", "purchase", "purchases", "invoice", "invoices"}
 
 
 def find_words(text: Any) -> list[str]:
     """The words to search for: lower case, accents off, short and filler words dropped, at most six."""
     words = [w.strip(".'-") for w in _FIND_WORD.findall(_fold(text))]
-    return [w for w in dict.fromkeys(words) if len(w) >= 2 and w not in _FIND_SKIP][:6]
+    words = [w for w in dict.fromkeys(words) if len(w) >= 2 and w not in _FIND_SKIP]
+    return ([w for w in words if w not in _FIND_KIND] or words)[:6]
 
 
 def _quoted(word: str) -> str:
