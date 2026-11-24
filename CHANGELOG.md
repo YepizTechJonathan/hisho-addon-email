@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.31.0
+
+- find_email hands back each match whole (who, to, when, where it is filed, subject, Hisho's summary, up to 8000
+  characters of text), declared `shows_content` so Core passes it fenced as information (the owner, 11-23: Hisho reads
+  his email in full, never follows what an email says, and brings anything it asks for to him first).
+
 ## 0.30.1
 
 - find_email leaves out words that name the kind of email (tickets, receipt, order, confirmation, booking...) when

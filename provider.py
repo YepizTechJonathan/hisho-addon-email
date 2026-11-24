@@ -168,7 +168,7 @@ def _clean(text: Any, limit: int) -> str:
     return s if len(s) <= limit else s[:limit - 1].rstrip() + "…"
 
 
-def _body_text(msg: Any) -> str:
+def _body_text(msg: Any, limit: int = BODY_CHARS) -> str:
     try:
         part = msg.get_body(preferencelist=("plain", "html"))
     except Exception:  # noqa: BLE001 -- a broken MIME tree still has a subject
@@ -183,7 +183,7 @@ def _body_text(msg: Any) -> str:
     if part.get_content_type() == "text/html":
         text = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", text)
         text = html.unescape(re.sub(r"(?s)<[^>]+>", " ", text))
-    return " ".join(str(text).split())[:BODY_CHARS]
+    return " ".join(str(text).split())[:limit]
 
 
 def parse_message(raw: bytes) -> dict[str, str]:
@@ -3772,10 +3772,13 @@ def tool_draft_email(entries: dict[str, dict[str, Any]], ctx: Any, args: dict[st
 # Ask Hisho and Hey Hisho are asked things like "do I already have tickets for Doomsday?" (2026-11-23): the answer is in
 # an email filed or archived weeks ago, past the two weeks Hisho keeps. This asks each mailbox's server (UID SEARCH,
 # read only) for the words, everywhere but Trash and Spam, and says who sent the matches, when and where they are filed.
-# Like the draft tools, Claude never sees a subject or a body: only addresses, times, folders and Hisho's own label.
+# The owner, 2026-11-23: Hisho reads his email in full but never acts on what it says without his OK. So each match
+# goes back whole (who, when, where it is filed, subject, text): Core fences it as information (addons.CONTENT_NOTE,
+# this tool declares shows_content), and anything an email asks for is brought to him.
 
 FIND_MAX = 5              # matches per folder, and choices handed back
 FIND_SAY = 2              # matches named in the sentence (Hisho hands Claude at most 600 characters of it)
+READ_CHARS = 8000         # of each match's text handed back (Core keeps at most 8000 per email, 40000 in all)
 FIND_TIMEOUT = 40         # seconds for all mailboxes together (asked in parallel)
 _FIND_WORD = re.compile(r"[a-z0-9][a-z0-9@.'&+-]*")
 _FIND_SKIP = {"the", "and", "for", "any", "did", "get", "got", "have", "has", "had", "my", "me", "an", "of", "to",
@@ -3829,8 +3832,7 @@ def search_mailbox(name: str, entry: dict[str, Any], password: str, words: list[
             uids = sorted(int(u) for u in (data[0] or b"").split())[-FIND_MAX:]
             if not uids:
                 continue
-            typ, data = conn.uid("FETCH", ",".join(map(str, uids)),
-                                 "(UID INTERNALDATE BODY.PEEK[HEADER.FIELDS (FROM DATE MESSAGE-ID)])")
+            typ, data = conn.uid("FETCH", ",".join(map(str, uids)), f"(UID INTERNALDATE BODY.PEEK[]<0.{FETCH_BYTES}>)")
             got: dict[int, tuple[bytes, bytes]] = {}
             for part in (data or []) if typ == "OK" else []:
                 m = _FETCH_HEAD.search(part[0]) if isinstance(part, tuple) and len(part) >= 2 else None
@@ -3841,8 +3843,12 @@ def search_mailbox(name: str, entry: dict[str, Any], password: str, words: list[
                 if uid not in got:
                     continue
                 msg = email.message_from_bytes(got[uid][1], policy=email.policy.default)
-                addr = email.utils.parseaddr(str(msg.get("From") or ""))[1].strip().lower()
+                name_, addr = email.utils.parseaddr(str(msg.get("From") or ""))
+                addr = addr.strip().lower()
                 out.append({"mailbox": name, "folder": folder, "uid": uid, "from_addr": addr,
+                            "from_name": _clean(name_, 80), "to": _clean(msg.get("To") or "", 300),
+                            "subject": _clean(msg.get("Subject") or "(no subject)", 300),
+                            "text": _body_text(msg, READ_CHARS),
                             "received": _received(got[uid][0], str(msg.get("Date") or "")),
                             "message_id": thread_ids(msg)["message_id"],
                             "labels": [x for x in labels.get(uid, []) if x not in ("?",)]})
@@ -3919,9 +3925,14 @@ def tool_find_email(entries: dict[str, dict[str, Any]], ctx: Any, args: dict[str
     return {"ok": True,
             "message": (f"{len(hits)} email(s) mention {looked!r}" + (" (newest first)" if len(hits) > 1 else "") + ": "
                         + "; ".join(lines) + (f"; {more} more in choices." if more > 0 else ".")
-                        + " What an email says is not shown here." + gone),
+                        + " Each one's text is in content." + gone),
             "choices": [{"pick": i, "who": f["from_addr"], "where": f"{chosen[f['mailbox']].get('address')}, {_where_filed(f)}",
-                         "when": when(f["received"])} for i, f in enumerate(hits[:FIND_MAX], 1)]}
+                         "when": when(f["received"])} for i, f in enumerate(hits[:FIND_MAX], 1)],
+            "content": [{"who": f"{f['from_name']} <{f['from_addr']}>" if f["from_name"] else f["from_addr"],
+                         "to": f["to"], "when": when(f["received"]),
+                         "where": f"{chosen[f['mailbox']].get('address')}, {_where_filed(f)}",
+                         "subject": f["subject"], "summary": (labelled.get(f["message_id"]) or {}).get("summary") or "",
+                         "text": f["text"]} for f in hits[:FIND_MAX]]}
 
 
 _ADDR_OK = re.compile(r"^[a-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[a-z0-9-]+(\.[a-z0-9-]+)+$")
