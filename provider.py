@@ -79,7 +79,7 @@ DAY_HOURS = 24            # Today.md: counts by label over the last 24 hours
 NEED_DAYS = 3             # Today.md: emails that need the owner (or are pressing) from the last 3 days, first look included
 CLAUDE_TIMEOUT = 240
 REPLY_LABELS = ("Needs reply", "Customer request")   # these get a drafted reply
-TODO_LABELS = ("Deadline",)                         # these get an "add to Today" proposal
+TODO_LABELS = ("Deadline",)                         # these go on Today by themselves when they ask something
 DRAFT_DAYS = 7            # draft replies only for mail from the last week
 DRAFTS_PER_POLL = 3       # Claude calls per poll for drafts
 SENT_KEEP = 2000          # Sent references remembered
@@ -3343,8 +3343,8 @@ def _reply_payload(name: str, m: dict[str, Any]) -> dict[str, Any]:
 
 
 def proposals(entries: dict[str, dict[str, Any]], ctx: Any) -> list[dict[str, Any]]:
-    """Cards for the Approvals list: a drafted reply per unanswered Needs reply / Customer request email, an
-    "add to Today" per unanswered Deadline email, and the new emails drafted from the page. An email the owner answers
+    """Cards for the Approvals list: a drafted reply per unanswered Needs reply / Customer request email, and the new
+    emails drafted from the page (a Deadline email goes on Today by itself, ``_deadline_to_today``). An email the owner answers
     drops out, so its card is withdrawn."""
     now, tz, out = _now(), _tz(), []
     for name, entry in entries.items():
@@ -3384,12 +3384,7 @@ def _stream_cards(name: str, entry: dict[str, Any], company: str, sname: str, fo
                         "action": {"type": "email.send", "payload": _reply_payload(name, m)},
                         "pressing": bool(m.get("pressing")) and not m.get("first_look")})
         elif m.get("label") in TODO_LABELS and m["uid"] not in events:   # an event: its calendar card is the one card
-            out.append({"key": f"todo:{sname}:{st.get('uidvalidity')}:{m['uid']}", "company": company, "link": link,
-                        "title": f"Put on Today: {m.get('subject')}"[:200],
-                        "why": f"{m['label']} from {_sender(m)}, received {when(m['received'], tz)}: {_summary(m, entry)}",
-                        "action": {"type": "today_add", "payload": {"text": _clean(
-                            f"{company}: {_summary(m, entry)} ({_sender(m)}, {when(m['received'], tz)})", 400)}},
-                        "pressing": bool(m.get("pressing")) and not m.get("first_look")})
+            _deadline_to_today(f"todo:{sname}:{st.get('uidvalidity')}:{m['uid']}", m, company, entry, tz)
     out += events.values()
     for m in msgs:
         note = m.get("note") or {} if not m.get("moved_from") else {}
@@ -3409,6 +3404,35 @@ def _stream_cards(name: str, entry: dict[str, Any], company: str, sname: str, fo
     for key, card in (clean.get("cards") or {}).items():
         out.append(_cleanup_card(name, entry, key, card, str(clean.get("validity") or ""), folder))
     return out
+
+
+def _today_added_path() -> Path:
+    return _state_dir() / "today-added.json"
+
+
+def _deadline_to_today(key: str, m: dict[str, Any], company: str, entry: dict[str, Any], tz: Any) -> None:
+    """A Deadline email (0.32.0, Jonathan 2026-11-25: "why is Hisho asking me to add this to Today instead of adding it
+    and tracking it"): no Approvals card. One that only informs (a delivery date, "no action needed") stays in the
+    brief's Email section and nowhere else; one that asks something of him goes straight on Today's task list, once
+    (he ticks it there; Hisho's task check takes it off when it's done)."""
+    summary = _summary(m, entry)
+    if _NO_ACTION.search(str(m.get("summary") or summary)):
+        return
+    path = _today_added_path()
+    try:
+        added = set(json.loads(path.read_text()))
+    except (OSError, ValueError):
+        added = set()
+    if key in added:
+        return
+    try:
+        from hisho.today import add_task
+        add_task(Path(os.environ.get("HISHO_ROOT") or "~/Hisho").expanduser(),
+                 _clean(f"{company}: {summary} ({_sender(m)}, {when(m['received'], tz)})", 400))
+    except Exception:  # noqa: BLE001 -- not added: try again next time
+        return
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    path.write_text(json.dumps(sorted(added | {key})[-2000:]))
 
 
 EVENT_FIELDS = [{"name": "title", "label": "What", "type": "text"}, {"name": "start", "label": "Starts", "type": "text"},

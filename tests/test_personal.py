@@ -307,8 +307,7 @@ def test_a_deadline_that_names_an_event_is_one_card_not_two(mod, monkeypatch):
              "summary": "Invoice due Friday", "received": t}]
     mod.save_state("home", {"status": "ok", "uidvalidity": "1", "messages": msgs})
     cards = mod.proposals({"home": {**GMAIL}}, None)
-    assert sorted((c["action"]["type"], c["key"]) for c in cards) == [("calendar_add", "event:home:1:7"),
-                                                                      ("today_add", "todo:home:1:8")]
+    assert [(c["action"]["type"], c["key"]) for c in cards] == [("calendar_add", "event:home:1:7")]   # 8: on Today
 
 
 def test_the_sort_is_asked_for_events_in_the_owners_zone(mod, monkeypatch):

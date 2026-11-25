@@ -164,16 +164,22 @@ def test_a_customer_request_gets_a_draft_card_with_the_portal_and_sign_off():
     assert "nothing goes out before that" in card["why"] and card["context"][0]["text"]
 
 
-def test_only_reply_labels_get_drafts_and_deadlines_get_a_today_card():
+def test_only_reply_labels_get_drafts_and_deadlines_go_on_today_without_a_card(tmp_path, monkeypatch):
+    # 2026-11-25, Jonathan: "why is Hisho asking me to add this to Today instead of adding it and tracking it"
+    monkeypatch.setenv("HISHO_ROOT", str(tmp_path))
     box = Box(inbox={1: ("25-Oct-2026 09:00:00 -0700", mail("Sale!")),
-                     2: ("25-Oct-2026 09:10:00 -0700", mail("Renewal due Friday", sender="SAM <noreply@sam.gov>"))})
+                     2: ("25-Oct-2026 09:10:00 -0700", mail("Renewal due Friday", sender="SAM <noreply@sam.gov>")),
+                     3: ("25-Oct-2026 09:20:00 -0700", mail("Shipping updated", sender="Starlink <s@starlink.com>"))})
     ask = claude([{"id": 1, "label": "Newsletter", "summary": "promo"},
-                  {"id": 2, "label": "Deadline", "summary": "SAM renewal due Friday"}])
+                  {"id": 2, "label": "Deadline", "summary": "SAM renewal due Friday"},
+                  {"id": 3, "label": "Deadline", "summary": "Delivery Nov 27-29, no action needed beyond receiving it."}])
     poll(box, ask)
     assert not [p for p in ask.seen if p.startswith("You draft")]
-    (card,) = mod.proposals({"yt": YT}, Ctx())
-    assert card["action"] == {"type": "today_add",
-                              "payload": {"text": "Acme: SAM renewal due Friday (SAM, Sun Oct 25, 9:10 AM PDT)"}}
+    assert mod.proposals({"yt": YT}, Ctx()) == []
+    mod.proposals({"yt": YT}, Ctx())                   # asked again: still once
+    note = (tmp_path / "Today.md").read_text()
+    assert note.count("- [ ] Acme: SAM renewal due Friday (SAM, Sun Oct 25, 9:10 AM PDT)") == 1
+    assert "Starlink" not in note
 
 
 def test_a_failed_draft_is_tried_twice_then_left():

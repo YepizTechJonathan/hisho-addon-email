@@ -19,7 +19,7 @@ Reads your company inboxes, tells you what needs you, and drafts replies; **noth
 - **Drafts**: for each unanswered Needs reply / Customer request email of the last week, Claude drafts a reply in
   your voice with your sign-off (customer requests are pointed at your request form). Each draft is a card on
   Hisho's **Approvals** page showing their email and the reply; **Edit** changes the text, subject or recipients,
-  **Send** sends exactly what the card shows, **Reject** drops it for good. Deadline emails get an "add to Today" card.
+  **Send** sends exactly what the card shows, **Reject** drops it for good. A Deadline email that asks something of you goes straight on Today's task list (once); one that only informs (a delivery date, "no action needed") stays in the Email section.
   **New email** on this add-on's page: say who it's to and what it should say; it becomes a card the same way
   (only to addresses you typed).
 - Sending (`send.py`, the only file with SMTP): one plain-text message from the mailbox the email came to, to the

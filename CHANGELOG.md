@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.32.0
+
+- No more "Put on Today" approval cards for Deadline emails (the owner, 11-25: "why is Hisho asking me to add this to
+  Today instead of adding it and just tracking the updates"). One that only informs (a delivery window, "no action
+  needed", a receipt) stays in Today.md's Email section; one that asks something of him goes straight on Today's task
+  list, once (`today-added.json` in the add-on's state), where Hisho's task check takes it off when it is done.
+
 ## 0.31.0
 
 - find_email hands back each match whole (who, to, when, where it is filed, subject, Hisho's summary, up to 8000
