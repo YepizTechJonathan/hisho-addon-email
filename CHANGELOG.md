@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.32.1
+
+- Same as 0.32.0, with no personal names in the code (the store's image check).
+
 ## 0.32.0
 
 - No more "Put on Today" approval cards for Deadline emails (the owner, 11-25: "why is Hisho asking me to add this to

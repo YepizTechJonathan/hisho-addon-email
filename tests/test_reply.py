@@ -165,7 +165,7 @@ def test_a_customer_request_gets_a_draft_card_with_the_portal_and_sign_off():
 
 
 def test_only_reply_labels_get_drafts_and_deadlines_go_on_today_without_a_card(tmp_path, monkeypatch):
-    # 2026-11-25, Jonathan: "why is Hisho asking me to add this to Today instead of adding it and tracking it"
+    # 2026-11-25, the owner: "why is Hisho asking me to add this to Today instead of adding it and tracking it"
     monkeypatch.setenv("HISHO_ROOT", str(tmp_path))
     box = Box(inbox={1: ("25-Oct-2026 09:00:00 -0700", mail("Sale!")),
                      2: ("25-Oct-2026 09:10:00 -0700", mail("Renewal due Friday", sender="SAM <noreply@sam.gov>")),

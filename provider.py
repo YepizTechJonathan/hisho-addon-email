@@ -3411,7 +3411,7 @@ def _today_added_path() -> Path:
 
 
 def _deadline_to_today(key: str, m: dict[str, Any], company: str, entry: dict[str, Any], tz: Any) -> None:
-    """A Deadline email (0.32.0, Jonathan 2026-11-25: "why is Hisho asking me to add this to Today instead of adding it
+    """A Deadline email (0.32.0, the owner 2026-11-25: "why is Hisho asking me to add this to Today instead of adding it
     and tracking it"): no Approvals card. One that only informs (a delivery date, "no action needed") stays in the
     brief's Email section and nowhere else; one that asks something of him goes straight on Today's task list, once
     (he ticks it there; Hisho's task check takes it off when it's done)."""
