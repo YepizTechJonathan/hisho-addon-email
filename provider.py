@@ -3406,6 +3406,16 @@ def _stream_cards(name: str, entry: dict[str, Any], company: str, sname: str, fo
     return out
 
 
+DEADLINE_TASKS_FROM = "2026-11-25T08:00:00+00:00"   # 0.32.0 went out: emails before it had an Approvals card
+
+
+def _before(when: Any, cutoff: str) -> bool:
+    try:
+        return dt.datetime.fromisoformat(str(when)) < dt.datetime.fromisoformat(cutoff)
+    except (TypeError, ValueError):
+        return True
+
+
 def _today_added_path() -> Path:
     return _state_dir() / "today-added.json"
 
@@ -3416,8 +3426,8 @@ def _deadline_to_today(key: str, m: dict[str, Any], company: str, entry: dict[st
     brief's Email section and nowhere else; one that asks something of him goes straight on Today's task list, once
     (he ticks it there; Hisho's task check takes it off when it's done)."""
     summary = _summary(m, entry)
-    if _NO_ACTION.search(str(m.get("summary") or summary)):
-        return
+    if _NO_ACTION.search(str(m.get("summary") or summary)) or _before(m.get("received"), DEADLINE_TASKS_FROM):
+        return   # older ones had their card (approved = already a task): never twice
     path = _today_added_path()
     try:
         added = set(json.loads(path.read_text()))

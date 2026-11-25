@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.32.2
+
+- A Deadline email from before 0.32.0 is never put on Today: it already had its card (an approved one is already a task). 0.32.1 added two Corsair tasks a second time.
+
 ## 0.32.1
 
 - Same as 0.32.0, with no personal names in the code (the store's image check).

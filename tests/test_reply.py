@@ -167,6 +167,7 @@ def test_a_customer_request_gets_a_draft_card_with_the_portal_and_sign_off():
 def test_only_reply_labels_get_drafts_and_deadlines_go_on_today_without_a_card(tmp_path, monkeypatch):
     # 2026-11-25, the owner: "why is Hisho asking me to add this to Today instead of adding it and tracking it"
     monkeypatch.setenv("HISHO_ROOT", str(tmp_path))
+    monkeypatch.setattr(mod, "DEADLINE_TASKS_FROM", "2026-10-01T00:00:00+00:00")
     box = Box(inbox={1: ("25-Oct-2026 09:00:00 -0700", mail("Sale!")),
                      2: ("25-Oct-2026 09:10:00 -0700", mail("Renewal due Friday", sender="SAM <noreply@sam.gov>")),
                      3: ("25-Oct-2026 09:20:00 -0700", mail("Shipping updated", sender="Starlink <s@starlink.com>"))})
@@ -180,6 +181,11 @@ def test_only_reply_labels_get_drafts_and_deadlines_go_on_today_without_a_card(t
     note = (tmp_path / "Today.md").read_text()
     assert note.count("- [ ] Acme: SAM renewal due Friday (SAM, Sun Oct 25, 9:10 AM PDT)") == 1
     assert "Starlink" not in note
+    monkeypatch.setattr(mod, "DEADLINE_TASKS_FROM", "2026-11-25T08:00:00+00:00")
+    (tmp_path / "today-added.json").unlink(missing_ok=True)
+    mod._today_added_path().unlink()
+    mod.proposals({"yt": YT}, Ctx())                   # from before the change: it had its card, never added again
+    assert (tmp_path / "Today.md").read_text() == note
 
 
 def test_a_failed_draft_is_tried_twice_then_left():
