@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.33.0
+
+- The job hunt reaches Today's task list (the owner, 11-25: job emails sat in his archive and "none have been brought to
+  my attention"). Job alerts go to the archive once their jobs are kept in Hisho, but those jobs only showed deep in
+  Today.md's Email section. Now each good match that is ready to apply (notes and cover letter written, and the web
+  check found it on the employer's side: confirmed or likely real) becomes a task, at most 5 a day, confirmed ones
+  first; a person writing about a job who waits on his reply (a recruiter, an interview) becomes a task at once. Each
+  once (`job-tasks.json` in the add-on's state); pressing Applied or Not for me ticks the job's task.
+
 ## 0.32.2
 
 - A Deadline email from before 0.32.0 is never put on Today: it already had its card (an approved one is already a task). 0.32.1 added two Corsair tasks a second time.

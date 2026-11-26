@@ -3355,6 +3355,7 @@ def proposals(entries: dict[str, dict[str, Any]], ctx: Any) -> list[dict[str, An
             out += _stream_cards(name, entry, company, sname, folder, load_state(sname), recent, tz, live)
         for c in load_state(name).get("compose") or []:
             out.append(_compose_card(name, entry, c))
+    jobs_to_today(entries, now, tz)
     return out
 
 
@@ -3443,6 +3444,77 @@ def _deadline_to_today(key: str, m: dict[str, Any], company: str, entry: dict[st
         return
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     path.write_text(json.dumps(sorted(added | {key})[-2000:]))
+
+
+JOB_TASKS_PER_DAY = 5   # ready-to-apply jobs put on Today a day, best first; the rest wait their turn in the Email section
+JOB_TASK_WEB = ("confirmed", "likely real")   # only jobs the web check found on the employer's side
+
+
+def _job_tasks_path() -> Path:
+    return _state_dir() / "job-tasks.json"
+
+
+def _job_tasks() -> dict[str, Any]:
+    try:
+        return json.loads(_job_tasks_path().read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def jobs_to_today(entries: dict[str, dict[str, Any]], now: dt.datetime, tz: Any) -> None:
+    """The job hunt on Today's task list (0.33.0, the owner 2026-11-25: job emails were archived and "none have been
+    brought to my attention"): the alerts go to the archive once their jobs are kept in Hisho, but those jobs showed only
+    deep in the brief's Email section. Now each good match that is ready to apply (notes and cover letter written, the
+    web check found it on the employer's side) becomes a task, a few a day, best first; and a person writing about a job
+    who waits on his reply (a recruiter, an interview) becomes one at once. Each once; Applied / Not for me ticks it."""
+    if not any(is_personal(e) for e in entries.values()):
+        return
+    people, b, note = job_board(entries, now)
+    done = _job_tasks()
+    new: list[tuple[str, str]] = []
+    for m in people:
+        key = f"person:{m.get('message_id') or m.get('uid')}"
+        if m.get("pressing") and not m.get("scam") and key not in done:
+            new.append((key, f"Personal: reply to {_clean(_sender(m), 40)} about a job: {_short_subject(m.get('subject'))} "
+                             f"(email of {_short_day(m['received'], now, tz)}; Add-ons > Email)"))
+    if jobs.note_key(note):
+        prep = _prep_state()
+        ready = [j for j in b["good"] if (prep.get(j["key"]) or {}).get("note")
+                 and prep[j["key"]].get("web") in JOB_TASK_WEB and j["key"] not in done]
+        ready.sort(key=lambda j: (prep[j["key"]]["web"] != "confirmed", -j.get("times", 1)))
+        day = now.astimezone(tz).date().isoformat()
+        today_n = sum(1 for v in done.values() if v.get("job") and v.get("day") == day)
+        for j in ready[:max(0, JOB_TASKS_PER_DAY - today_n)]:
+            bits = ", ".join(x for x in (j.get("place"), j.get("pay")) if x)
+            new.append((j["key"], f"Personal: apply to {_clean(_job_name(j), 120)}" + (f" ({_clean(bits, 60)})" if bits else "")
+                        + f"; {prep[j['key']]['web']} on their site, notes and cover letter ready: "
+                        f"[[{prep[j['key']]['note']}|ready to apply]]"))
+    if not new:
+        return
+    from hisho.today import add_task
+    root = Path(os.environ.get("HISHO_ROOT") or "~/Hisho").expanduser()
+    for key, text in new:
+        text = " ".join(text.split())[:480]   # its parts are cleaned already; the [[note]] link stays
+        try:
+            add_task(root, text)
+        except Exception:  # noqa: BLE001 -- not added: tried again next time
+            break
+        done[key] = {"text": text, "at": now.isoformat(timespec="seconds"),
+                     "day": now.astimezone(tz).date().isoformat(), "job": not key.startswith("person:")}
+    _job_tasks_path().parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    _job_tasks_path().write_text(json.dumps(done, indent=1))
+
+
+def _tick_job_task(key: str) -> None:
+    """Applied / Not for me on a job that is on Today: its task is ticked there (Hisho moves it to Done recently)."""
+    text = (_job_tasks().get(key) or {}).get("text")
+    if not text:
+        return
+    try:
+        from hisho.today import set_task
+        set_task(Path(os.environ.get("HISHO_ROOT") or "~/Hisho").expanduser(), text, True)
+    except Exception:  # noqa: BLE001 -- already ticked or taken off by him: nothing to do
+        pass
 
 
 EVENT_FIELDS = [{"name": "title", "label": "What", "type": "text"}, {"name": "start", "label": "Starts", "type": "text"},
@@ -3559,6 +3631,7 @@ def job_press(entries: dict[str, dict[str, Any]], ctx: Any, key: str, action: st
     what = "Applied" if action == "applied" else "Not for me"
     if not jobs.log_press(personal, what, job, _now(), why=why):
         return {"ok": False, "error": f"Couldn't write to {jobs.PROFILE}"}
+    _tick_job_task(key)
     return {"ok": True, "message": f"{what}: noted in {jobs.PROFILE}. Delete that line there to undo it."}
 
 
