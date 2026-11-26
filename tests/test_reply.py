@@ -178,14 +178,14 @@ def test_only_reply_labels_get_drafts_and_deadlines_go_on_today_without_a_card(t
     assert not [p for p in ask.seen if p.startswith("You draft")]
     assert mod.proposals({"yt": YT}, Ctx()) == []
     mod.proposals({"yt": YT}, Ctx())                   # asked again: still once
-    note = (tmp_path / "Today.md").read_text()
+    note = (tmp_path / "Tasks.md").read_text()
     assert note.count("- [ ] Acme: SAM renewal due Friday (SAM, Sun Oct 25, 9:10 AM PDT)") == 1
     assert "Starlink" not in note
     monkeypatch.setattr(mod, "DEADLINE_TASKS_FROM", "2026-11-25T08:00:00+00:00")
     (tmp_path / "today-added.json").unlink(missing_ok=True)
     mod._today_added_path().unlink()
     mod.proposals({"yt": YT}, Ctx())                   # from before the change: it had its card, never added again
-    assert (tmp_path / "Today.md").read_text() == note
+    assert (tmp_path / "Tasks.md").read_text() == note
 
 
 def test_a_failed_draft_is_tried_twice_then_left():
