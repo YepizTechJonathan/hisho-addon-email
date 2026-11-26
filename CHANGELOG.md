@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.35.0
+
+- Settlement and claim emails are checked: real or a copy? (the owner, 11-25, about a "Cellular Data Class Action
+  Settlement" email: "is that scam or is that real? ... that is one of the tasks of the email add-on"). Each one of the
+  last month is read once (`claim_facts`): the domains the mail server itself verified (Gmail's or Zoho's DKIM/DMARC),
+  where its links really go (click-tracking redirects unwrapped), and red flags (a fee, SSN, a bank login, gift cards).
+  Then one a poll is checked on the web (Claude with only search and page reading) for the case's official site.
+  Today.md notes the verdict next to the email (✅ real, official site ...; ⚠ looks fake; ❔ couldn't confirm). Red flags
+  or links away from the official site are never "real"; a fake one is marked a scam and goes like any scam.
+
 ## 0.34.0
 
 - Job mail has its own folder (the owner, 11-25: "a folder for just the jobs emails so that it can be cleaned up

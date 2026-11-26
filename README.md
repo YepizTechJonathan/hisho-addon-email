@@ -40,6 +40,8 @@ Reads your company inboxes, tells you what needs you, and drafts replies; **noth
   and checked on the employer's side go on Today's task list (5 a day, best first), and so does anyone writing about a
   job who waits on your reply; Applied or Not for me ticks the task. Job mail that waits on nothing (alerts whose jobs
   Hisho keeps, applications received) is filed in a Jobs folder (`jobs_folder`, a label in Gmail), not the archive.
+  Settlement and claim emails are checked (who really sent them, where their links go, what they ask for, and the
+  case's official site on the web); Today.md says next to each whether it is real or looks fake.
 - **Clean-up**: new mail is sorted on every 5-minute read, and at 8 AM and 6 PM (when there's anything) one "Clean up" card per mailbox on the Approvals
   page: the newsletters, promotions, junk and old notices you don't need, grouped by sender with a few words on what
   each was about (the first one covers the whole inbox). It never offers a reply you owe, a customer, a bill or

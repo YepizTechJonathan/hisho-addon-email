@@ -778,3 +778,33 @@ def test_archived_job_mail_is_sorted_into_jobs_or_trash():
     assert v("x@ziprecruiter.com", "Earn $900 a day", {"scam": True}) == "trash"
     assert v("invitations@linkedin.com", "Reminder about your invitation from Pat") == ""             # social, not job mail
     assert v("accountinfo@usajobs.gov", "Information about your USAJOBS Account") == ""              # his account
+
+
+def _claim_raw(frm, auth, html):
+    return (f"From: Settlement Administrator <{frm}>\r\nSubject: Class Action Notice of Settlement\r\n"
+            f"Authentication-Results: mx.google.com; {auth}\r\nContent-Type: text/html; charset=utf-8\r\n\r\n{html}").encode()
+
+
+def test_settlement_emails_are_checked_real_or_fake():
+    """0.35.0, the owner: "is that scam or is that real? ... that is one of the tasks of the email add-on"."""
+    real = mod.claim_facts(_claim_raw(
+        "noreply@cellulardataclassaction.com", "dkim=pass header.i=@cellulardataclassaction.com",
+        '<a href="https://x.r.us-east-1.awstrack.me/L0/https:%2F%2Fwww.cellulardataclassaction.com%2Fpayment-election/1/abc">'
+        'Choose</a> <a href="https://www.angeionemail.com/unsubscribe/1">Unsubscribe</a>'))
+    assert real == {"from_site": "cellulardataclassaction.com", "verified": ["cellulardataclassaction.com"],
+                    "sender_ok": True, "links": ["cellulardataclassaction.com"], "red": []}
+    web = lambda verdict, site: (lambda p: json.dumps({"verdict": verdict, "official_site": site, "links_official": True,  # noqa: E731
+                                                       "why": "the court lists that site", "source": "https://court.example"}))
+    m = {"subject": "Payment Election Notice", "from_addr": "noreply@cellulardataclassaction.com", "claim": real}
+    got = mod.claim_verdict(m, web("real", "www.CellularDataClassAction.com"))
+    assert got["verdict"] == "real" and "official site cellulardataclassaction.com" in mod.claim_note({"claim": got})
+
+    fake = mod.claim_facts(_claim_raw(
+        "claims@settlement-payouts.example", "dkim=fail",
+        '<a href="https://pay-now.example/claim">Claim</a> A $9.99 processing fee and your Social Security number are required.'))
+    assert not fake["sender_ok"] and fake["links"] == ["pay-now.example"] and "processing fee" in fake["red"]
+    kept = [{"uid": 1, "subject": "Class Action Notice", "from_addr": "claims@settlement-payouts.example", "claim": fake}]
+    mod.check_claims(kept, NOW, web("real", "cellulardataclassaction.com"))   # the web says real: the red flags win
+    assert kept[0]["claim"]["verdict"] == "looks fake" and kept[0]["scam"] is True
+    assert "⚠ looks fake" in mod.claim_note(kept[0])
+    assert mod.is_claim({"subject": "Payment Election Notice - Csupo v. Google LLC"}) and not mod.is_claim({"subject": "Lunch?"})

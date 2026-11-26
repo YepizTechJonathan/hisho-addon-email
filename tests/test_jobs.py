@@ -252,6 +252,11 @@ def test_an_alert_hisho_archived_is_rated_again_when_the_note_changes(mod):
     assert [m["uid"] for m in mod.jobs.to_rate([held, deleted], "new")] == [1]
 
 
+def _tasks_note(vault):
+    """Where Hisho keeps the owner's tasks: Tasks.md since Core split Today.md (11-25), Today.md before."""
+    return vault / "Tasks.md" if (vault / "Tasks.md").exists() else vault / "Today.md"
+
+
 def test_ready_jobs_and_people_waiting_go_on_today_once_and_applied_ticks_them(mod, monkeypatch):
     """0.33.0: job alerts are archived once their jobs are kept in Hisho, so the jobs themselves go on Today's task list
     (checked ones, a few a day) and a person writing about a job who waits on a reply goes there at once."""
@@ -267,13 +272,13 @@ def test_ready_jobs_and_people_waiting_go_on_today_once_and_applied_ticks_them(m
     tz = ZoneInfo("America/Los_Angeles")
     mod.jobs_to_today(entries, NOW, tz)
     mod.jobs_to_today(entries, NOW, tz)                       # each once
-    tasks = [t["text"] for t in hisho.today.tasks((vault / "Today.md").read_text())]
+    tasks = [t["text"] for t in hisho.today.tasks(_tasks_note(vault).read_text())]
     assert tasks == [
         "Personal: reply to Pat Recruiter about a job: Interview Tuesday? (email of today; Add-ons > Email)",
         "Personal: apply to Junior Software Developer, New York Jets (Remote, $85k); likely real on their site, notes and "
         "cover letter ready: [[Companies/Personal/Job applications/New York Jets - Junior Software Developer|ready to apply]]"]
     assert mod.act(entries, type("C", (), {"input": ""})(), "home", f"job-{good}", "applied")["ok"]
-    after = {t["text"]: t["done"] for t in hisho.today.tasks((vault / "Today.md").read_text())}
+    after = {t["text"]: t["done"] for t in hisho.today.tasks(_tasks_note(vault).read_text())}
     assert after[tasks[1]] is True and after[tasks[0]] is False
 
 
@@ -291,10 +296,10 @@ def test_unchecked_jobs_wait_and_only_a_few_go_on_today_a_day(mod, monkeypatch):
     mod._state_file("job-prep").write_text(json.dumps(prep))
     tz = ZoneInfo("America/Los_Angeles")
     mod.jobs_to_today({"home": {**GMAIL}}, NOW, tz)
-    tasks = [t["text"] for t in hisho.today.tasks((vault / "Today.md").read_text())]
+    tasks = [t["text"] for t in hisho.today.tasks(_tasks_note(vault).read_text())]
     assert len(tasks) == mod.JOB_TASKS_PER_DAY and "Developer 8" in tasks[0]       # confirmed first
     assert not any("Developer 1," in t for t in tasks)                              # not found on their site: not a task
     mod.jobs_to_today({"home": {**GMAIL}}, NOW + dt.timedelta(hours=1), tz)
-    assert len(hisho.today.tasks((vault / "Today.md").read_text())) == mod.JOB_TASKS_PER_DAY   # the day's share is used
+    assert len(hisho.today.tasks(_tasks_note(vault).read_text())) == mod.JOB_TASKS_PER_DAY   # the day's share is used
     mod.jobs_to_today({"home": {**GMAIL}}, NOW + dt.timedelta(days=1), tz)
-    assert len(hisho.today.tasks((vault / "Today.md").read_text())) == 7              # the rest the next day
+    assert len(hisho.today.tasks(_tasks_note(vault).read_text())) == 7              # the rest the next day
