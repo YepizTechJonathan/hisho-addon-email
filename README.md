@@ -38,7 +38,8 @@ Reads your company inboxes, tells you what needs you, and drafts replies; **noth
   Each good job match is got ready in `Companies/Personal/Job applications/` (looks real?, what to check, why it
   fits, what to put first, a cover letter draft); a job email with only fake offers goes at once. Jobs that are ready
   and checked on the employer's side go on Today's task list (5 a day, best first), and so does anyone writing about a
-  job who waits on your reply; Applied or Not for me ticks the task.
+  job who waits on your reply; Applied or Not for me ticks the task. Job mail that waits on nothing (alerts whose jobs
+  Hisho keeps, applications received) is filed in a Jobs folder (`jobs_folder`, a label in Gmail), not the archive.
 - **Clean-up**: new mail is sorted on every 5-minute read, and at 8 AM and 6 PM (when there's anything) one "Clean up" card per mailbox on the Approvals
   page: the newsletters, promotions, junk and old notices you don't need, grouped by sender with a few words on what
   each was about (the first one covers the whole inbox). It never offers a reply you owe, a customer, a bill or
@@ -116,6 +117,7 @@ mailbox shows "waiting for app password": no error and no alert.
   - `payments_folder` (str, optional)
   - `bills_folder` (str, optional)
   - `archive_folder` (str, optional)
+  - `jobs_folder` (str, optional)
   - `note` (str, optional)
 
 ## How to install

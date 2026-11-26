@@ -818,6 +818,12 @@ def file_folder(entry: dict[str, Any], group: str, found: list[str]) -> str:
     return {"Receipts": "Purchases", "Bills": "Bills"}.get(group, "Payments")
 
 
+def jobs_folder(entry: dict[str, Any]) -> str:
+    """Where job mail is filed (0.34.0): the owner's own folder (a label in Gmail) for the job hunt, so it is easy to
+    look through and clean, instead of the archive."""
+    return str(entry.get("jobs_folder") or "Jobs")
+
+
 def archive_folder(entry: dict[str, Any]) -> str:
     if entry.get("archive_folder"):
         return str(entry["archive_folder"])
@@ -840,8 +846,10 @@ def _item(uid: int, c: dict[str, Any], group: str) -> dict[str, Any]:
 
 
 def assist_plan(entry: dict[str, Any], clean: dict[str, Any], kept: list[dict[str, Any]], now: dt.datetime,
-                found: list[str] | None = None, junk: bool = False) -> list[tuple[str, str, list[dict[str, Any]]]]:
-    """What to do now: [(what, folder, items)], what = trash / file / archive. Folder "" = the Trash."""
+                found: list[str] | None = None, junk: bool = False,
+                waiting: set[int] | None = None) -> list[tuple[str, str, list[dict[str, Any]]]]:
+    """What to do now: [(what, folder, items)], what = trash / file / archive. Folder "" = the Trash. ``waiting``: the
+    inbox UIDs the inbox review says wait on the owner."""
     folder = str(entry.get("folder") or "INBOX")
     if not cleanable(folder, junk):
         return []
@@ -869,6 +877,12 @@ def assist_plan(entry: dict[str, Any], clean: dict[str, Any], kept: list[dict[st
                 trash.append(_item(uid, c, "Job alerts"))
             elif all((prep.get(j["key"]) or {}).get("verdict") for j in fits if j["fit"] == "good"):
                 held.append(_item(uid, c, "Job alert (jobs kept in Hisho)"))
+            continue
+        if inbox and (m or {}).get("label") == JOB and not alert and not scam and not (m or {}).get("pressing") \
+                and uid not in (waiting or set()) and not junk and age >= FILE_HOURS:
+            # mail about his job hunt that waits on nothing (an application received, a status update): filed with
+            # the job mail; one waiting on him stays in front (its task is on Today)
+            files.setdefault(jobs_folder(entry), []).append(_item(uid, c, "Job email"))
             continue
         if c.get("group") == "Social" and not kw:   # he gets these in the apps themselves: gone, not mentioned
             trash.append(_item(uid, c, "Social"))
@@ -898,7 +912,9 @@ def assist_plan(entry: dict[str, Any], clean: dict[str, Any], kept: list[dict[st
             subj, dom = norm_subject(c.get("subject")), str(c.get("from_addr") or "").rpartition("@")[2]
             if len(subj) > 3 and dom:   # only a conversation (a Re: / Fwd: in it), never look-alike notices
                 threads.setdefault((subj, dom), []).append((c["received"], uid, c, m))
-    archive = list(tasked) + (held if inbox else [])
+    archive = list(tasked)
+    if inbox and held:   # 0.34.0: alerts whose jobs Hisho keeps go to the Jobs folder, not the archive
+        files.setdefault(jobs_folder(entry), []).extend(held)
     for (_s, _d), its in threads.items():
         its.sort(key=lambda t: t[0])
         if not _REPLY.search(str(its[-1][2].get("subject") or "")):
@@ -1048,10 +1064,11 @@ def note_mail(entry: dict[str, Any], it: dict[str, Any], body: str, kept: list[d
 
 
 def assist(entry: dict[str, Any], ctx: Any, clean: dict[str, Any], kept: list[dict[str, Any]], now: dt.datetime,
-           found: list[str] | None = None, junk: bool = False) -> tuple[dict[str, Any], set[int]]:
+           found: list[str] | None = None, junk: bool = False,
+           waiting: set[int] | None = None) -> tuple[dict[str, Any], set[int]]:
     """Do the plan (cleanup.py moves; one login per folder moved to), note it, and say which UIDs left."""
     clean = dict(clean)
-    plan = assist_plan(entry, clean, kept, now, found, junk)
+    plan = assist_plan(entry, clean, kept, now, found, junk, waiting)
     if not plan:
         return clean, set()
     password = ctx.secret(str(entry.get("password") or ""))
@@ -1074,8 +1091,9 @@ def assist(entry: dict[str, Any], ctx: Any, clean: dict[str, Any], kept: list[di
                         "items": [it for it in items if it["uid"] in moved]})
         clean["assisted"] = sorted({int(u) for u in clean.get("assisted") or []}
                                    | ({it["uid"] for it in items} if res.get("ok") else set()))[-20000:]
-    held = {it["uid"] for d in did if d["what"] == "archive" for it in d["items"] if it["group"].startswith("Job alert (")}
-    for m in kept:   # an archived job alert stays in Hisho's job list (Today.md, the page) for its two weeks
+    held = {it["uid"] for d in did if d["what"] in ("archive", "file") for it in d["items"]
+            if it["group"].startswith("Job alert (") or it["group"] == "Job email"}
+    for m in kept:   # a filed job email stays in Hisho's job list (Today.md, the page) for its two weeks
         if m["uid"] in held:
             m["held_in_hisho"] = True
     gone -= held
@@ -1105,6 +1123,116 @@ def assist(entry: dict[str, Any], ctx: Any, clean: dict[str, Any], kept: list[di
         except Exception:  # noqa: BLE001
             pass
     return clean, gone
+
+
+# ── job mail already in the archive (0.34.0, one pass on the owner's say-so) ──────────────────────────────────────
+#: application systems: what they send is about an application of his, never a listing
+JOB_ATS = ("myworkdayjobs.com", "myworkday.com", "greenhouse.io", "greenhouse-mail.io", "lever.co", "icims.com",
+           "smartrecruiters.com", "workablemail.com", "jobvite.com", "schoolspring.com", "edjoin.org",
+           "governmentjobs.com", "applytojob.com", "paylocity.com", "ultipro.com", "taleo.net", "successfactors.com")
+
+
+_OLD_ABOUT_HIM = re.compile(r"\bapplications?:|\b(your application|application (received|submitted|status|update)|"
+                            r"thanks? (you )?for applying|you applied|applied (for|to)|interview|offer letter|onboarding|"
+                            r"next steps?|assessment|new task to complete|candidate|received your resume|new message|"
+                            r"a message|message to|interested in you|reaching out)\b", re.I)
+_OLD_ACCOUNT = re.compile(r"\b(welcome to|password|confirm your (account|email)|verify|account|sign[- ]?up|registered|"
+                          r"registration|unsubscribe)\b", re.I)
+
+
+def _old_job_verdict(h: dict[str, Any], known: dict[str, dict[str, Any]], now: dt.datetime) -> str:
+    """'jobs' (file it), 'trash' (a job board's alert with nothing for him now, or a fake offer) or '' (not job mail)."""
+    addr = h["from_addr"]
+    local, _, domain = addr.partition("@")
+    on = lambda ds: any(domain == d or domain.endswith("." + d) for d in ds)  # noqa: E731
+    if _OLD_ACCOUNT.search(h["subject"]):
+        return ""   # his account on a job site (welcome, password, sign-up): an account notice, not job mail
+    about_him = bool(_OLD_ABOUT_HIM.search(h["subject"]))   # _JOB_PERSONAL's "invit", "offer" also catch promotions
+    if on(("linkedin.com",)) and "job" not in local and not _OLD_ABOUT_HIM.search(h["subject"]):
+        return ""   # LinkedIn's social mail (invitations, posts): not job mail
+    m = known.get(h["message_id"]) or {}
+    if m.get("scam") or (m.get("jobs") and all(j.get("fit") == "scam" for j in m["jobs"])):
+        return "trash"
+    if about_him or on(JOB_ATS) or (not job_bot(addr) and m.get("label") == JOB):
+        return "jobs"
+    fresh = str(m.get("received") or "") >= (now - dt.timedelta(days=JOB_DAYS)).isoformat()
+    if fresh and any(j.get("fit") in ("good", "maybe") for j in m.get("jobs") or []):
+        return "jobs"
+    return "trash" if on(JOB_BOARDS) or job_bot(addr) else "jobs"
+
+
+def old_job_mail(name: str, entry: dict[str, Any], password: str, *, apply: bool = False, now: dt.datetime | None = None,
+                 connect_fn: Callable[..., Any] | None = None, show: int = 8) -> dict[str, Any]:
+    """Job mail already archived in a Gmail mailbox (All Mail, not the inbox, not yet in the Jobs folder): what is about
+    his job hunt gets the Jobs label (UID COPY: it stays where it is), job boards' alerts with nothing for him now and
+    fake offers go to Trash (Gmail keeps it 30 days; one under another label of his is left alone). ``apply=False``
+    only reads and says what it would do. Every move goes in the History note."""
+    if "gmail" not in str(entry.get("imap_host") or "").lower():
+        return {"ok": False, "error": "only Gmail mailboxes have an All Mail to look through"}
+    now, folder, jf = now or _now(), "[Gmail]/All Mail", jobs_folder(entry)
+    known = {m["message_id"]: m for _n, st in ((n, load_state(n)) for n, _f in streams(name, entry))
+             for m in st.get("messages") or [] if m.get("message_id")}
+    conn = (connect_fn or imap_connect)(entry, password)
+    rows: list[dict[str, Any]] = []
+    try:
+        conn.select(mailbox(folder), readonly=True)
+        validity = str((conn.response("UIDVALIDITY")[1] or [b""])[0] or b"", "ascii", "replace")
+        uids: set[int] = set()
+        for d in (*JOB_BOARDS, *JOB_ATS):
+            typ, data = conn.uid("SEARCH", None, "X-GM-RAW", _quoted(f"from:{d} -in:inbox -label:{jf}"))
+            uids |= {int(u) for u in (data[0] or b"").split()} if typ == "OK" else set()
+        order = sorted(uids)
+        labels = gmail_labels(conn, order)
+        for i in range(0, len(order), 200):
+            typ, data = conn.uid("FETCH", ",".join(map(str, order[i:i + 200])),
+                                 "(UID INTERNALDATE BODY.PEEK[HEADER.FIELDS (FROM SUBJECT MESSAGE-ID)])")
+            for part in (data or []) if typ == "OK" else []:
+                mm = _FETCH_HEAD.search(part[0]) if isinstance(part, tuple) and len(part) >= 2 else None
+                if not mm:
+                    continue
+                msg = email.message_from_bytes(part[1], policy=email.policy.default)
+                who, addr = email.utils.parseaddr(str(msg.get("From") or ""))
+                rows.append({"uid": int(mm.group(1)), "from": _clean(who, 80), "from_addr": addr.strip().lower(),
+                             "subject": _clean(msg.get("Subject") or "", 200),
+                             "message_id": (re.findall(r"<[^<>\s]+>", str(msg.get("Message-ID") or "")) or [""])[0],
+                             "received": _received(part[0], str(msg.get("Date") or ""))})
+    finally:
+        try:
+            conn.logout()
+        except Exception:  # noqa: BLE001
+            pass
+    plan: dict[str, list[dict[str, Any]]] = {"jobs": [], "trash": []}
+    for h in rows:
+        v = _old_job_verdict(h, known, now)
+        own = [x for x in labels.get(h["uid"], []) if not x.startswith("\\")]
+        if v == "trash" and own:
+            continue   # under a label of his: Trash would take it out of that too
+        if v:
+            item = {"uid": h["uid"], "message_id": h["message_id"], "from": h["from"], "from_addr": h["from_addr"],
+                    "subject": h["subject"], "about": "", "date": h["received"][:10],
+                    "group": "Job email" if v == "jobs" else "Old job alert"}
+            plan[v].append(item)
+    out = {"ok": True, "mailbox": name, "jobs": len(plan["jobs"]), "trash": len(plan["trash"]),
+           "sample_jobs": [f"{it['from'] or it['from_addr']}: {it['subject']}" for it in plan["jobs"][:show]],
+           "sample_trash": [f"{it['from'] or it['from_addr']}: {it['subject']}" for it in plan["trash"][:show]]}
+    if not apply:
+        return out
+    view = {**entry, "folder": folder}
+    did = []
+    for what, items in (("trash", plan["trash"]), ("file", plan["jobs"])):
+        for i in range(0, len(items), cleaner.MAX_ITEMS):
+            chunk = items[i:i + cleaner.MAX_ITEMS]
+            res = cleaner.trash(view, password, {"items": chunk, "uidvalidity": validity},
+                                **({"dest": jf, "copy": True} if what == "file" else {}))
+            if not res.get("ok"):
+                out.setdefault("errors", []).append(str(res.get("error") or "")[:160])
+                continue
+            moved = set(res.get("moved") or [])
+            did.append({"at": now.isoformat(timespec="seconds"), "what": what, "folder": jf if what == "file" else "",
+                        "items": [it for it in chunk if it["uid"] in moved]})
+    write_history(view, did, now)
+    out["done"] = {d["what"]: len(d["items"]) for d in did}
+    return out
 
 
 TIMED_REMINDERS = (1440, 120)   # a day before and two hours before
@@ -2215,7 +2343,9 @@ def _poll_one(name: str, entry: dict[str, Any], ctx: Any, *, now: dt.datetime | 
             clean = sort_for_cleanup(entry, clean, kept, now, ask)
             if assistant_on(entry):   # 0.21.0: it acts itself, no card
                 found = load_state(name.split("--")[0]).get("folders_found") or []
-                clean, gone = assist(entry, ctx, clean, kept, now, found, junk)
+                seen = (state.get("review") or {}).get("seen") or {}
+                waiting = {m["uid"] for m in kept if (seen.get(str(m["uid"])) or {"needs": True}).get("needs")}
+                clean, gone = assist(entry, ctx, clean, kept, now, found, junk, waiting)
                 if not junk:
                     clean = assist_events(entry, clean, kept, now)
                     assist_jobs(entry, kept, now, ask)

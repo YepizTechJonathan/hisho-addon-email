@@ -124,9 +124,13 @@ def validate(payload: Any) -> dict[str, Any]:
 
 
 def trash(entry: dict[str, Any], password: str, p: dict[str, Any], *,
-          imap_factory: Callable[..., Any] = TrashIMAP, dest: str = "") -> dict[str, Any]:
+          imap_factory: Callable[..., Any] = TrashIMAP, dest: str = "", copy: bool = False) -> dict[str, Any]:
     """Move exactly ``p['items']`` (still matching their Message-IDs) from the inbox to Trash, or with ``dest`` to that
-    folder instead (the assistant's Archive or a filing folder, created when missing; nothing is deleted)."""
+    folder instead (the assistant's Archive or a filing folder, created when missing; nothing is deleted). ``copy``
+    (a filing folder only): UID COPY and nothing else, for Gmail's All Mail, where a copy is adding a label and a
+    move out of it would delete the message."""
+    if copy and not dest:
+        raise CleanupError("a copy needs a folder to copy to")
     inbox, trash_folder = str(entry.get("folder") or "INBOX"), str(entry.get("trash_folder") or "Trash")
     folder = dest or trash_folder
     to_trash = folder == trash_folder
@@ -183,7 +187,10 @@ def trash(entry: dict[str, Any], password: str, p: dict[str, Any], *,
         if not ok:
             return {"ok": False, "error": "none of them are in the inbox any more (moved or deleted already); nothing done"}
         uidset = ",".join(str(u) for u in ok)
-        if "MOVE" in caps:
+        if copy:
+            typ, data = conn.uid("COPY", uidset, mailbox(folder))
+            how = "COPY"
+        elif "MOVE" in caps:
             typ, data = conn.uid("MOVE", uidset, mailbox(folder))
             how = "MOVE"
         else:
@@ -197,7 +204,7 @@ def trash(entry: dict[str, Any], password: str, p: dict[str, Any], *,
             return {"ok": False, "error": f"Zoho refused the move: {data!r}"[:240]}
         keeps = "Gmail" if "X-GM-EXT-1" in caps else "Zoho" if "zoho" in str(entry.get("imap_host") or "zoho") else "Your mail"
         return {"ok": True, "moved": ok, "skipped": skipped, "labelled": labelled, "how": how,
-                "message": f"Moved {len(ok)} email{'s' * (len(ok) != 1)} to {folder}"
+                "message": f"{'Copied' if copy else 'Moved'} {len(ok)} email{'s' * (len(ok) != 1)} to {folder}"
                            + (f" ({keeps} keeps Trash about 30 days)" if to_trash else "")
                            + (f"; {skipped} had already gone or changed and were left alone" if skipped else "")
                            + (f"; {len(labelled)} starred or under one of your labels were left alone" if labelled else "") + "."}

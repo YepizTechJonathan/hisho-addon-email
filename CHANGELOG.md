@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.34.0
+
+- Job mail has its own folder (the owner, 11-25: "a folder for just the jobs emails so that it can be cleaned up
+  easier"): `jobs_folder` per mailbox, default `Jobs` (a label in Gmail, made when missing). Job alerts whose jobs Hisho
+  keeps go there instead of the archive, and so does mail about his job hunt that waits on nothing (an application
+  received, a status update) an hour after it came. One waiting on him (a recruiter, an interview) stays in the inbox.
+- `old_job_mail`: one pass over a Gmail mailbox's archive for job mail already there. What is about his job hunt
+  (applications, interviews, recruiters, alerts with jobs that fit now) gets the Jobs label (UID COPY: nothing moves);
+  job boards' old alerts and marketing and fake offers go to Trash (Gmail keeps it 30 days; anything under another
+  label of his is left alone); his accounts on job sites and LinkedIn's social mail aren't touched. It only reads unless
+  `apply=True`; every move goes in the History note. `cleanup.trash` gained `copy` for this.
+
 ## 0.33.0
 
 - The job hunt reaches Today's task list (the owner, 11-25: job emails sat in his archive and "none have been brought to

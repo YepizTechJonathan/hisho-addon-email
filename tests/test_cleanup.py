@@ -706,7 +706,7 @@ def test_he_would_have_deleted_these_too(monkeypatch, tmp_path):
     plan = {(what, folder): [it["uid"] for it in items] for what, folder, items in mod.assist_plan(ASSIST, clean, kept, NOW)}
     assert plan[("trash", "")] == [1, 3]                       # the store's mass mail, the alert with nothing for him
     assert plan[("file", "Payments")] == [2]                   # a statement: a record
-    assert plan[("archive", "Archive")] == [4]                 # its jobs are in Hisho now (note + Today.md)
+    assert plan[("file", "Jobs")] == [4]                      # its jobs are in Hisho now (note + Today.md); 0.34.0: filed in Jobs
     assert 5 not in [u for v in plan.values() for u in v]      # a person writing stays
 
 
@@ -750,3 +750,31 @@ def test_bills_and_account_notices_are_noted_then_archived_social_goes(monkeypat
     assert "| $84.12 | 2026-12-05 | Oct 20 - Nov 19 | 512 kWh | no |" in bill
     assert "**Unity**: Account suspended" in (vault / "Companies/Globex/Account notices.md").read_text()
     assert added[0].startswith("Pay SCE $84.12 by Dec 5") and added[1].startswith("Find out why Unity suspended the account")
+
+
+def test_job_mail_that_waits_on_nothing_is_filed_in_jobs(monkeypatch, tmp_path):
+    """0.34.0: the job hunt has its own folder. An application received goes there after an hour; a recruiter waiting on
+    a reply, or one the inbox review hasn't cleared, stays in front."""
+    old = (NOW - dt.timedelta(hours=2)).isoformat()
+    clean = {"present": [1, 2, 3], "keep_words": [], "cats": {
+        str(u): {"group": "Jobs", "from_addr": f"hr{u}@school.example", "received": old, "subject": s}
+        for u, s in ((1, "Your application was received"), (2, "Interview Tuesday?"), (3, "Application update"))}}
+    kept = [{"uid": 1, "label": "Job search"}, {"uid": 2, "label": "Job search", "pressing": "job reply"},
+            {"uid": 3, "label": "Job search"}]
+    plan = {(w, f): [it["uid"] for it in its] for w, f, its in mod.assist_plan(ASSIST, clean, kept, NOW, waiting={3})}
+    assert plan == {("file", "Jobs"): [1]}
+    assert mod.jobs_folder({**ASSIST, "jobs_folder": "Job hunt"}) == "Job hunt"
+
+
+def test_archived_job_mail_is_sorted_into_jobs_or_trash():
+    """0.34.0, the owner: a folder for just the job emails, and the ones that are only spam deleted."""
+    v = lambda frm, subj, known=None: mod._old_job_verdict(  # noqa: E731
+        {"from_addr": frm, "subject": subj, "message_id": "<1@x>"}, {"<1@x>": known} if known else {}, NOW)
+    assert v("indeedapply@indeed.com", "Indeed Application: Software Engineer") == "jobs"        # his application
+    assert v("hr@myworkday.com", "Update on Your Application") == "jobs"
+    assert v("someone@company.example", "County of Riverside Job Interview") == "jobs"
+    assert v("alert@indeed.com", "QA Engineer at Empeon in Remote and 6 more new jobs") == "trash"  # an old listing
+    assert v("jobalerts-noreply@linkedin.com", "Help desk", {"received": NOW.isoformat(), "jobs": [{"fit": "good"}]}) == "jobs"
+    assert v("x@ziprecruiter.com", "Earn $900 a day", {"scam": True}) == "trash"
+    assert v("invitations@linkedin.com", "Reminder about your invitation from Pat") == ""             # social, not job mail
+    assert v("accountinfo@usajobs.gov", "Information about your USAJOBS Account") == ""              # his account

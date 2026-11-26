@@ -17,7 +17,7 @@ name: email
 kind: integration
 title: Email
 description: Reads your company inboxes, drafts replies and clean-ups; sends or moves to Trash only when you approve.
-version: 0.33.0
+version: 0.34.0
 you_need:
   - "A mailbox that offers IMAP and SMTP (Gmail / Google Workspace, Zoho, iCloud, Yahoo, Fastmail, your host's mail...)"
   - "An app password for it (not your normal password); Set up this mailbox says where your provider makes one"
@@ -83,6 +83,7 @@ entry_schema:
   payments_folder: "str?"         # where it files payment confirmations (default: your Payments folder, else a new Payments)
   bills_folder: "str?"            # where the assistant files bills after noting them (default: your Bills folder, else a new Bills)
   archive_folder: "str?"          # where a thread's older emails go (default Archive; Gmail: [Gmail]/All Mail, i.e. out of the inbox, labels kept)
+  jobs_folder: "str?"             # where job mail that waits on nothing is filed (default Jobs; a label in Gmail)
   note: "str?"
 connect:
   label: Set up this mailbox
